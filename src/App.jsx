@@ -157,7 +157,8 @@ function GlobalStyle({ T }) {
     ".toast-enter { animation: toastPop .35s cubic-bezier(.34,1.56,.64,1) both; }",
     "@keyframes barGrow { from { width:0 !important; } }", 
     ".bar-fill { animation: barGrow 1s cubic-bezier(.2,.8,.2,1) both; }",
-    ".tab-content { animation: fadeIn .25s ease both; }",
+    "@keyframes tabSlide { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }",
+    ".tab-content { animation: tabSlide .35s cubic-bezier(0.2, 0.8, 0.2, 1) both; }",
     ".shake-anim { animation: shake .4s cubic-bezier(.36,.07,.19,.97) both; }",
   ].join(" ");
 
@@ -835,7 +836,7 @@ function StatsTab({ txns, cfg, cCats, T, tr }) {
   const maxB = Math.max(...bars.flatMap(b => [b.i, b.e]), 1);
 
   return (
-    <div style={{ paddingBottom: 20 }}>
+    <div className="tab-content" style={{ paddingBottom: 20 }}>
       <div style={{ fontSize: 22, fontWeight: 900, color: T.text, padding: "20px 2px 16px" }}>{tr("analytics")}</div>
 
       <div style={s.row({ gap: 8, overflowX: "auto", paddingBottom: 8, marginBottom: 16 })}>
@@ -936,7 +937,7 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr }) {
   const sOut = list.filter(t => t.type === "expense").reduce((s, t) => s + t.amt, 0);
 
   return (
-    <div style={{ paddingBottom: 20 }}>
+    <div className="tab-content" style={{ paddingBottom: 20 }}>
       <div style={s.row({ justifyContent: "space-between", padding: "20px 2px 16px", gap: 12, overflow: "visible", position: "relative", zIndex: 10 })}>
         <AccDrop accs={accs} selId={accF} onChange={setAccF} T={T} tr={tr} />
         <div style={s.row({ gap: 8, flexShrink: 0 })}>
@@ -1007,7 +1008,7 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr }) {
 function AccountsTab({ accs, cfg, T, onAdd, onEdit, onDel, tr }) {
   const total = accs.reduce((s, a) => s + a.balance, 0);
   return (
-    <div style={{ paddingBottom: 20 }}>
+    <div className="tab-content" style={{ paddingBottom: 20 }}>
       <div style={s.row({ justifyContent: "space-between", padding: "20px 2px 16px" })}>
         <div style={{ fontSize: 22, fontWeight: 900, color: T.text }}>{tr("accounts")}</div>
         <button onClick={onAdd} style={{ padding: "8px 16px", borderRadius: 12, background: T.bg3, color: T.sub, fontSize: 13, fontWeight: 700 }}>{tr("add")}</button>
@@ -1053,7 +1054,7 @@ function SettingsTab({ cfg, setSetting, T, localBackup, driveBackup, driveRestor
   const isDummyClient = G_ID.startsWith("YOUR");
 
   return (
-    <div style={{ paddingBottom: 30 }}>
+    <div className="tab-content" style={{ paddingBottom: 20 }}>
       <div style={{ fontSize: 22, fontWeight: 900, color: T.text, padding: "20px 2px 16px" }}>{tr("settings")}</div>
 
       <SHd T={T}>{tr("appearance")}</SHd>
@@ -1256,38 +1257,53 @@ function TxModal({ T, accs, allCats, cfg, onSubmit, onClose, editTx, tr }) {
       </div>
 
       <Lbl T={T}>{type === "transfer" ? "From Account" : tr("account")}</Lbl>
-      <div style={s.row({ gap: 10, marginBottom: 20, flexWrap: "wrap" })}>
-        {accs.map(a => (
-          <button key={a.id} onClick={() => setForm(f => ({ ...f, aid: a.id }))}
-            style={{
-              padding: "10px 14px", borderRadius: 14, fontSize: 13, fontWeight: 700,
-              background: form.aid === a.id ? a.color + "20" : T.bg3, color: form.aid === a.id ? a.color : T.sub,
-              border: `1.5px solid ${form.aid === a.id ? a.color + "70" : "transparent"}`
-            }}>
-            {a.icon} {a.name}
-          </button>
-        ))}
-      </div>
+      {accs.length > 2 ? (
+        <select value={form.aid} onChange={e => setForm(f => ({ ...f, aid: e.target.value }))}
+          style={{ background: T.bg3, borderRadius: 12, color: T.text, fontSize: 14, fontWeight: 600, padding: "12px 14px", width: "100%", marginBottom: 20 }}>
+          {accs.map(a => <option key={a.id} value={a.id}>{a.icon} {a.name}</option>)}
+        </select>
+      ) : (
+        <div style={s.row({ gap: 10, marginBottom: 20, flexWrap: "wrap" })}>
+          {accs.map(a => (
+            <button key={a.id} onClick={() => setForm(f => ({ ...f, aid: a.id }))}
+              style={{
+                padding: "10px 14px", borderRadius: 14, fontSize: 13, fontWeight: 700,
+                background: form.aid === a.id ? a.color + "20" : T.bg3, color: form.aid === a.id ? a.color : T.sub,
+                border: `1.5px solid ${form.aid === a.id ? a.color + "70" : "transparent"}`
+              }}>
+              {a.icon} {a.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {type === "transfer" ? (
         <>
           <Lbl T={T}>To Account</Lbl>
-          <div style={s.row({ gap: 10, marginBottom: 20, flexWrap: "wrap" })}>
-            {accs.map(a => (
-              <button key={`to-${a.id}`} onClick={() => setForm(f => ({ ...f, toAid: a.id }))}
-                style={{
-                  padding: "10px 14px", borderRadius: 14, fontSize: 13, fontWeight: 700,
-                  background: form.toAid === a.id ? a.color + "20" : T.bg3, color: form.toAid === a.id ? a.color : T.sub,
-                  border: `1.5px solid ${form.toAid === a.id ? a.color + "70" : "transparent"}`
-                }}>
-                {a.icon} {a.name}
-              </button>
-            ))}
-          </div>
+          {accs.length > 2 ? (
+            <select value={form.toAid} onChange={e => setForm(f => ({ ...f, toAid: e.target.value }))}
+              style={{ background: T.bg3, borderRadius: 12, color: T.text, fontSize: 14, fontWeight: 600, padding: "12px 14px", width: "100%", marginBottom: 20 }}>
+              {accs.map(a => <option key={`to-${a.id}`} value={a.id}>{a.icon} {a.name}</option>)}
+            </select>
+          ) : (
+            <div style={s.row({ gap: 10, marginBottom: 20, flexWrap: "wrap" })}>
+              {accs.map(a => (
+                <button key={`to-${a.id}`} onClick={() => setForm(f => ({ ...f, toAid: a.id }))}
+                  style={{
+                    padding: "10px 14px", borderRadius: 14, fontSize: 13, fontWeight: 700,
+                    background: form.toAid === a.id ? a.color + "20" : T.bg3, color: form.toAid === a.id ? a.color : T.sub,
+                    border: `1.5px solid ${form.toAid === a.id ? a.color + "70" : "transparent"}`
+                  }}>
+                  {a.icon} {a.name}
+                </button>
+              ))}
+            </div>
+          )}
         </>
       ) : (
         <>
           <Lbl T={T}>{tr("category")}</Lbl>
+          {/* ... Categories mapping remains exactly the same below here ... */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 20 }}>
             {cats.map(c => (
               <button key={c.id} onClick={() => { setForm(f => ({ ...f, cat: c.id })); setErr(""); }}
