@@ -922,6 +922,7 @@ function StatsTab({ txns, cfg, cCats, T, tr }) {
 
 // ─── TRANSACTIONS ─────────────────────────────────────────────────────────────
 function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr }) {
+  const [limit, setLimit] = useState(50);
   const [p, setP] = useState("all");
   const [typeF, setTypeF] = useState("all");
   const [query, setQuery] = useState("");
@@ -949,6 +950,7 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr }) {
 
   const sIn = list.filter(t => t.type === "income").reduce((s, t) => s + t.amt, 0);
   const sOut = list.filter(t => t.type === "expense").reduce((s, t) => s + t.amt, 0);
+  /*useEffect(() => { setLimit(50); }, [p, typeF, query, accF, fromD, toD]);*/
 
   return (
     <div className="tab-content" style={{ paddingBottom: 20 }}>
@@ -1011,9 +1013,17 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr }) {
       )}
 
       {list.length === 0 && <div style={{ textAlign: "center", color: T.muted, padding: "40px 0", fontSize: 14, fontWeight: 600 }}>{tr("noTxns")}</div>}
-      {list.map(t => (
+
+      {list.slice(0, limit).map(t => (
         <TxCard key={t.id} t={t} cfg={cfg} cCats={cCats} T={T} onEdit={() => onEdit(t)} onDel={() => onDel(t.id)} accs={accs} showAcc />
       ))}
+
+      {list.length > limit && (
+        <button onClick={() => setLimit(l => l + 50)}
+          style={{ width: "100%", padding: "14px", borderRadius: 14, background: T.bg3, color: T.text, fontSize: 14, fontWeight: 800, marginTop: 10 }}>
+          Load More ({list.length - limit} remaining)
+        </button>
+      )}
     </div>
   );
 }
