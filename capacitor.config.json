@@ -1,0 +1,6 @@
+{
+  "appId": "com.karanprajpati.cashflow",
+  "appName": "Cash Flow",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}
