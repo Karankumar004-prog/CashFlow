@@ -30,18 +30,18 @@ const DARK = {
   sep: "rgba(255,255,255,0.08)"
 };
 // Replace your existing LIGHT constant with this one:
-const LIGHT = { 
-  bg: "#f4f4f9", 
-  bg2: "#ffffff", 
+const LIGHT = {
+  bg: "#f4f4f9",
+  bg2: "#ffffff",
   bg3: "#e0e0ea", // <-- Darkened for better button contrast
-  text: "#1a1a2e", 
-  sub: "#666677", 
-  muted: "#a0a0b0", 
-  accent: "#7C5DFA", 
-  adk: "#5335d4", 
-  nav: "#ffffff", 
-  green: "#00a870", 
-  red: "#e53935", 
+  text: "#1a1a2e",
+  sub: "#666677",
+  muted: "#a0a0b0",
+  accent: "#7C5DFA",
+  adk: "#5335d4",
+  nav: "#ffffff",
+  green: "#00a870",
+  red: "#e53935",
   sep: "rgba(0,0,0,0.09)" // <-- Darkened for better borders
 };
 // ─── DATA ────────────────────────────────────────────────────────────────────
@@ -129,6 +129,7 @@ function GlobalStyle({ T }) {
     "button, [role=button] { font-family: inherit; cursor: pointer; border: 0 solid transparent !important; outline: none; background: transparent; -webkit-tap-highlight-color: transparent; -webkit-appearance: none; appearance: none; box-shadow: none; }",
     "button::-moz-focus-inner { border: 0; padding: 0; }",
     "input, select, textarea { font-family: inherit; outline: none; border: none; background: transparent; -webkit-appearance: none; appearance: none; -webkit-tap-highlight-color: transparent; }",
+    "select { background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2214%22%20height%3D%2214%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22" + T.muted.replace("#", "%23") + "%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E'); background-repeat: no-repeat; background-position: right 14px center; padding-right: 36px; }",
     "input[type=number]::-webkit-outer-spin-button, input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }",
     "input[type=date]::-webkit-calendar-picker-indicator { filter: " + calFilter + "; cursor: pointer; }",
     "select option { background: " + T.bg2 + "; color: " + T.text + "; }",
@@ -155,7 +156,7 @@ function GlobalStyle({ T }) {
     ".overlay-enter { animation: fadeIn .25s ease both; }",
     ".drop-enter { animation: dropDown .25s cubic-bezier(.2,.8,.2,1) both; }",
     ".toast-enter { animation: toastPop .35s cubic-bezier(.34,1.56,.64,1) both; }",
-    "@keyframes barGrow { from { width:0 !important; } }", 
+    "@keyframes barGrow { from { width:0 !important; } }",
     ".bar-fill { animation: barGrow 1s cubic-bezier(.2,.8,.2,1) both; }",
     "@keyframes tabSlide { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }",
     ".tab-content { animation: tabSlide .35s cubic-bezier(0.2, 0.8, 0.2, 1) both; }",
@@ -194,10 +195,10 @@ function PBar({ p, set, T, tr }) {
 function TxCard({ t, cfg, cCats, T, onEdit, onDel, accs, showAcc }) {
   const isTransfer = t.type === "transfer";
   const cat = isTransfer ? { i: "🔄", c: T.muted, l: "Transfer" } : getCat(t.cat, cCats);
-  
+
   const acc = showAcc ? accs?.find(a => a.id === t.aid) : null;
   const toAcc = isTransfer && showAcc ? accs?.find(a => a.id === t.toAid) : null;
-  
+
   const accString = (acc && toAcc) ? `${acc.name} ➔ ${toAcc.name}` : (acc ? acc.name : "");
   const amtColor = isTransfer ? T.text : (t.type === "income" ? T.green : T.red);
   const amtPrefix = isTransfer ? "" : (t.type === "income" ? "+" : "-");
@@ -406,6 +407,19 @@ function FBtn({ T, children, onClick, style }) {
   );
 }
 
+function Sel({ T, children, style, ...props }) {
+  return (
+    <div style={{ position: "relative", width: "100%", ...style }}>
+      <select style={{ background: T.bg3, borderRadius: 12, color: T.text, fontSize: 14, fontWeight: 600, padding: "12px 40px 12px 14px", width: "100%", display: "block" }} {...props}>
+        {children}
+      </select>
+      <div style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", display: "flex", color: T.muted }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      </div>
+    </div>
+  );
+}
+
 // ─── PIN LOCK SCREEN ───────────────────────────────────────────────────────────
 function LockScreen({ T, cfg, onUnlock, tr }) {
   const [pin, setPin] = useState("");
@@ -431,7 +445,7 @@ function LockScreen({ T, cfg, onUnlock, tr }) {
     <div style={{ position: "fixed", inset: 0, background: T.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
       <div style={{ marginBottom: 32 }}><AppLogo size={72} /></div>
       <div style={{ fontSize: 20, fontWeight: 800, color: T.text, marginBottom: 24 }}>{tr("appPwd") || "App Password"}</div>
-      
+
       {/* SHAKE ANIMATION AND RED DOTS */}
       <div className={err ? "shake-anim" : ""} style={s.row({ gap: 14, marginBottom: 48, height: 20 })}>
         {Array.from({ length: cfg.password.length }).map((_, i) => (
@@ -528,7 +542,7 @@ export default function App() {
   const accsB = useMemo(() => accs.map(a => {
     const inc = txns.filter(t => t.aid === a.id && t.type === "income").reduce((s, t) => s + t.amt, 0);
     const exp = txns.filter(t => t.aid === a.id && t.type === "expense").reduce((s, t) => s + t.amt, 0);
-    
+
     // Double-Entry Transfer Logic
     const trOut = txns.filter(t => t.aid === a.id && t.type === "transfer").reduce((s, t) => s + t.amt, 0);
     const trIn = txns.filter(t => t.toAid === a.id && t.type === "transfer").reduce((s, t) => s + t.amt, 0);
@@ -559,7 +573,7 @@ export default function App() {
       showToast(tr("remove"), T.muted);
     }
   };
-  
+
   // Backup to Native Android Folder
   const localBackup = async () => {
     const hasPerm = await ensureStoragePermission();
@@ -1083,10 +1097,9 @@ function SettingsTab({ cfg, setSetting, T, localBackup, driveBackup, driveRestor
         ].map((item, i, arr) => (
           <div key={item.k} style={{ padding: "14px 18px", borderBottom: i < arr.length - 1 ? `1px solid ${T.sep}` : "none" }}>
             <Lbl T={T}>{item.lb}</Lbl>
-            <select value={cfg[item.k]} onChange={e => setSetting(item.k, e.target.value)}
-              style={{ background: T.bg3, borderRadius: 12, color: T.text, fontSize: 14, fontWeight: 600, padding: "10px 14px", width: "100%" }}>
+            <Sel T={T} value={cfg[item.k]} onChange={e => setSetting(item.k, e.target.value)}>
               {(item.display || item.opts).map((o, j) => <option key={j} value={item.opts[j]}>{o}</option>)}
-            </select>
+            </Sel>
           </div>
         ))}
       </div>
@@ -1188,7 +1201,7 @@ function SettingsTab({ cfg, setSetting, T, localBackup, driveBackup, driveRestor
       <div style={{ textAlign: "center", marginTop: 30 }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: T.text }}>CashFlow Pro v5.1</div>
         <div style={{ fontSize: 11, color: T.muted, marginTop: 4, fontWeight: 600 }}>No ads · Private · Secure</div>
-        
+
         <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${T.sep}` }}>
           <div style={{ fontSize: 11, color: T.muted, fontWeight: 700 }}>Owned by Engineers Classic Innovator: Mr White</div>
           <a href="#" target="_blank" rel="noopener noreferrer" style={{ display: "block", fontSize: 11, color: T.accent, marginTop: 6, fontWeight: 600, textDecoration: "none" }}>
@@ -1258,10 +1271,9 @@ function TxModal({ T, accs, allCats, cfg, onSubmit, onClose, editTx, tr }) {
 
       <Lbl T={T}>{type === "transfer" ? "From Account" : tr("account")}</Lbl>
       {accs.length > 2 ? (
-        <select value={form.aid} onChange={e => setForm(f => ({ ...f, aid: e.target.value }))}
-          style={{ background: T.bg3, borderRadius: 12, color: T.text, fontSize: 14, fontWeight: 600, padding: "12px 14px", width: "100%", marginBottom: 20 }}>
+        <Sel T={T} value={form.aid} onChange={e => setForm(f => ({ ...f, aid: e.target.value }))} style={{ marginBottom: 20 }}>
           {accs.map(a => <option key={a.id} value={a.id}>{a.icon} {a.name}</option>)}
-        </select>
+        </Sel>
       ) : (
         <div style={s.row({ gap: 10, marginBottom: 20, flexWrap: "wrap" })}>
           {accs.map(a => (
@@ -1281,10 +1293,9 @@ function TxModal({ T, accs, allCats, cfg, onSubmit, onClose, editTx, tr }) {
         <>
           <Lbl T={T}>To Account</Lbl>
           {accs.length > 2 ? (
-            <select value={form.toAid} onChange={e => setForm(f => ({ ...f, toAid: e.target.value }))}
-              style={{ background: T.bg3, borderRadius: 12, color: T.text, fontSize: 14, fontWeight: 600, padding: "12px 14px", width: "100%", marginBottom: 20 }}>
+            <Sel T={T} value={form.toAid} onChange={e => setForm(f => ({ ...f, toAid: e.target.value }))} style={{ marginBottom: 20 }}>
               {accs.map(a => <option key={`to-${a.id}`} value={a.id}>{a.icon} {a.name}</option>)}
-            </select>
+            </Sel>
           ) : (
             <div style={s.row({ gap: 10, marginBottom: 20, flexWrap: "wrap" })}>
               {accs.map(a => (
@@ -1372,10 +1383,9 @@ function AccModal({ T, onSubmit, onClose, editAcc, tr }) {
         {COLORS.map(c => <button key={c} onClick={() => setForm(f => ({ ...f, color: c }))} style={{ width: 32, height: 32, borderRadius: "50%", background: c, boxShadow: form.color === c ? `0 0 0 3px ${T.text}` : "none" }} />)}
       </div>
       <Lbl T={T}>{tr("type")}</Lbl>
-      <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
-        style={{ background: T.bg3, borderRadius: 12, color: T.text, fontSize: 14, fontWeight: 600, padding: "12px 14px", width: "100%", marginBottom: 24 }}>
+      <Sel T={T} value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))} style={{ marginBottom: 24 }}>
         {TYPES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-      </select>
+      </Sel>
       <button onClick={() => form.name.trim() && onSubmit(form)}
         style={{ width: "100%", padding: "16px", borderRadius: 16, background: `linear-gradient(135deg,${T.accent},${T.adk})`, color: "#fff", fontSize: 15, fontWeight: 800 }}>
         {editAcc ? tr("saveChanges") : tr("addAcc")}
@@ -1461,7 +1471,7 @@ function CatModal({ T, onSubmit, onClose, tr }) {
               background: form.i === e ? T.accent + "40" : T.bg3,
               border: `2px solid ${form.i === e ? T.text : "transparent"}`, // <-- Fixed: Adapts to Light/Dark Mode
               boxShadow: form.i === e ? `0 0 12px ${T.accent}80` : "none",
-              transform: form.i === e ? "scale(1.15)" : "none", 
+              transform: form.i === e ? "scale(1.15)" : "none",
               transition: "all .2s ease"
             }}>
             {e}
@@ -1513,7 +1523,7 @@ function ReportModal({ T, txns, accs, cCats, cfg, onClose, onExport, tr }) {
   let run = 0; const rb = rows.map(t => { run += t.type === "income" ? t.amt : -t.amt; return { ...t, bal: run }; });
 
   if (prev) return (
-    <Sheet T={T} onClose={onClose} title={tr("reportPreview")||"Report Preview"}>
+    <Sheet T={T} onClose={onClose} title={tr("reportPreview") || "Report Preview"}>
       <div style={{ background: T.bg3, borderRadius: 16, padding: "16px", marginBottom: 16 }}>
         <div style={s.row({ gap: 12, marginBottom: 12 })}>
           <AppLogo size={42} />
@@ -1563,14 +1573,14 @@ function ReportModal({ T, txns, accs, cCats, cfg, onClose, onExport, tr }) {
       </div>
 
       <div style={s.row({ gap: 12 })}>
-        <button onClick={() => setPrev(false)} style={{ flex: 1, padding: "14px", borderRadius: 12, background: T.bg3, color: T.text, fontSize: 14, fontWeight: 600 }}>← {tr("backBtn")||"Back"}</button>
-        <button onClick={() => onExport(from, to, aF)} style={{ flex: 2, padding: "14px", borderRadius: 12, background: `linear-gradient(135deg,${T.accent},${T.adk})`, color: "#fff", fontSize: 14, fontWeight: 700 }}>🖨️ {tr("exportCsv")||"Export CSV"}</button>
+        <button onClick={() => setPrev(false)} style={{ flex: 1, padding: "14px", borderRadius: 12, background: T.bg3, color: T.text, fontSize: 14, fontWeight: 600 }}>← {tr("backBtn") || "Back"}</button>
+        <button onClick={() => onExport(from, to, aF)} style={{ flex: 2, padding: "14px", borderRadius: 12, background: `linear-gradient(135deg,${T.accent},${T.adk})`, color: "#fff", fontSize: 14, fontWeight: 700 }}>🖨️ {tr("exportCsv") || "Export CSV"}</button>
       </div>
     </Sheet>
   );
 
   return (
-    <Sheet T={T} onClose={onClose} title={tr("generateReport")||"Generate Report"}>
+    <Sheet T={T} onClose={onClose} title={tr("generateReport") || "Generate Report"}>
       <div style={s.row({ gap: 6, flexWrap: "wrap", marginBottom: 14 })}>
         {PRE.map(p => <button key={p.l} onClick={() => { setFrom(p.f); setTo(p.t); }} style={{ padding: "5px 11px", borderRadius: 18, fontSize: 11, background: T.bg3, color: T.sub }}>{p.l}</button>)}
       </div>
@@ -1581,20 +1591,19 @@ function ReportModal({ T, txns, accs, cCats, cfg, onClose, onExport, tr }) {
         </div>
       ))}
       <Lbl T={T}>{tr("account") || "Account"}</Lbl>
-      <select value={aF} onChange={e => setAF(e.target.value)}
-        style={{ background: T.bg3, borderRadius: 10, color: T.text, fontSize: 13, padding: "10px 12px", width: "100%", marginBottom: 20 }}>
+      <Sel T={T} value={aF} onChange={e => setAF(e.target.value)} style={{ marginBottom: 20 }}>
         <option value="all">{tr("allAccs") || "All Accounts"}</option>
         {accs.map(a => <option key={a.id} value={a.id}>{a.icon} {a.name}</option>)}
-      </select>
+      </Sel>
 
       <div style={s.row({ gap: 12 })}>
         <button onClick={() => setPrev(true)}
           style={{ flex: 1, padding: "16px", borderRadius: 16, background: T.bg3, color: T.text, fontSize: 14, fontWeight: 700 }}>
-          👁️ {tr("preview")||"Preview"}
+          👁️ {tr("preview") || "Preview"}
         </button>
         <button onClick={() => onExport(from, to, aF)}
           style={{ flex: 1, padding: "16px", borderRadius: 16, background: `linear-gradient(135deg,${T.accent},${T.adk})`, color: "#fff", fontSize: 14, fontWeight: 800 }}>
-          🖨️ {tr("exportCsv")||"Export CSV"}
+          🖨️ {tr("exportCsv") || "Export CSV"}
         </button>
       </div>
     </Sheet>
@@ -1624,15 +1633,15 @@ function PinModal({ T, cfg, setCfg, onClose, showToast, tr }) {
   };
 
   return (
-    <Sheet T={T} onClose={onClose} title={cfg.passwordEnabled ? (tr("changePwd")||"Change Password") : (tr("setPwd")||"Set Password")}>
+    <Sheet T={T} onClose={onClose} title={cfg.passwordEnabled ? (tr("changePwd") || "Change Password") : (tr("setPwd") || "Set Password")}>
       {cfg.passwordEnabled && (
         <div style={s.col({ marginBottom: 16 })}>
-          <Lbl T={T}>{tr("currentPin")||"Current PIN"}</Lbl>
+          <Lbl T={T}>{tr("currentPin") || "Current PIN"}</Lbl>
           <Inp T={T} type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={old} onChange={e => setOld(e.target.value.replace(/\D/g, ""))} placeholder="••••" style={{ fontSize: 24, letterSpacing: 10, fontWeight: 800, textAlign: "center" }} />
         </div>
       )}
 
-      {[[tr("newPin")||"New PIN", pin, setPin], [tr("confirmPin")||"Confirm PIN", conf, setConf]].map(([l, v, sv]) => (
+      {[[tr("newPin") || "New PIN", pin, setPin], [tr("confirmPin") || "Confirm PIN", conf, setConf]].map(([l, v, sv]) => (
         <div key={l} style={s.col({ marginBottom: 16 })}>
           <Lbl T={T}>{l}</Lbl>
           <Inp T={T} type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={v} onChange={e => sv(e.target.value.replace(/\D/g, ""))} placeholder="••••" style={{ fontSize: 24, letterSpacing: 10, fontWeight: 800, textAlign: "center" }} />
@@ -1640,13 +1649,13 @@ function PinModal({ T, cfg, setCfg, onClose, showToast, tr }) {
       ))}
 
       <button onClick={save} style={{ width: "100%", padding: "16px", borderRadius: 16, background: `linear-gradient(135deg,${T.accent},${T.adk})`, color: "#fff", fontSize: 15, fontWeight: 800, marginTop: 8 }}>
-        {tr("savePwd")||"Save Password"}
+        {tr("savePwd") || "Save Password"}
       </button>
 
       {cfg.passwordEnabled && (
         <button onClick={remove}
           style={{ width: "100%", marginTop: 12, padding: "14px", borderRadius: 14, color: T.red, fontSize: 14, fontWeight: 700, background: T.red + "15" }}>
-          {tr("removePwd")||"Remove Password"}
+          {tr("removePwd") || "Remove Password"}
         </button>
       )}
     </Sheet>
