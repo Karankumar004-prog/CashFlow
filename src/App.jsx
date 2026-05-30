@@ -715,7 +715,7 @@ export default function App() {
 
       <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "0 16px", paddingBottom: 110 }}>
         {tab === "home" && <HomeTab txns={txns} accs={accsB} cfg={cfg} cCats={cCats} T={T} openModal={openModal} onEdit={t => openModal("editTx", { tx: t })} onDel={id => openModal("delTx", { id })} tr={tr} />}
-        {tab === "stats" && <StatsTab txns={txns} cfg={cfg} cCats={cCats} T={T} tr={tr} />}
+        {tab === "stats" && <StatsTab txns={txns} cfg={cfg} cCats={cCats} T={T} accs={accsB} tr={tr} />}
         {tab === "txns" && <TxnsTab txns={txns} cfg={cfg} cCats={cCats} T={T} accs={accs} onEdit={t => openModal("editTx", { tx: t })} onDel={id => openModal("delTx", { id })} openModal={openModal} tr={tr} />}
         {tab === "accounts" && <AccountsTab accs={accsB} cfg={cfg} T={T} onAdd={() => openModal("addAcc")} onEdit={a => openModal("editAcc", { acc: a })} onDel={id => openModal("delAcc", { id })} tr={tr} />}
         {tab === "settings" && <SettingsTab cfg={cfg} setSetting={setSetting} T={T} localBackup={localBackup} driveBackup={driveBackup} driveRestore={driveRestore} openModal={openModal} gUser={gUser} gLogin={() => gLogin().then(t => t && showToast("✅ Signed in"))} gSignOut={gSignOut} cCats={cCats} onAddCat={() => openModal("addCat")} onDelCat={delCat} G_ID={G_ID} tr={tr} />}
@@ -819,7 +819,7 @@ function HomeTab({ txns, accs, cfg, cCats, T, openModal, tr }) {
 }
 
 // ─── STATS ────────────────────────────────────────────────────────────────────
-function StatsTab({ txns, cfg, cCats, T, tr }) {
+function StatsTab({ txns, cfg, cCats, T, accs, tr }) {
   const now = new Date();
   const [sM, setSM] = useState(now.getMonth());
   const [sY, setSY] = useState(now.getFullYear());
@@ -838,6 +838,15 @@ function StatsTab({ txns, cfg, cCats, T, tr }) {
   const mInc = mt.filter(t => t.type === "income").reduce((s, t) => s + t.amt, 0);
   const mExp = mt.filter(t => t.type === "expense").reduce((s, t) => s + t.amt, 0);
 
+  // 2. ADD THIS NEW MATH BLOCK HERE:
+  const mTr = mt.filter(t => t.type === "transfer").reduce((s, t) => s + t.amt, 0);
+  const flow = {};
+  mt.filter(t => t.type === "transfer").forEach(t => {
+    flow[t.aid] = (flow[t.aid] || 0) - t.amt;     // Money left this account
+    flow[t.toAid] = (flow[t.toAid] || 0) + t.amt; // Money entered this account
+  });
+  const flowArr = Object.entries(flow).filter(([_, v]) => v !== 0).sort((a, b) => b[1] - a[1]);
+
   const cm = {};
   mt.filter(t => t.type === "expense").forEach(t => { cm[t.cat] = (cm[t.cat] || 0) + t.amt; });
   const top = Object.entries(cm).sort((a, b) => b[1] - a[1]).slice(0, 5);
@@ -845,9 +854,10 @@ function StatsTab({ txns, cfg, cCats, T, tr }) {
   const bars = sixM.map(m => {
     const bi = txns.filter(t => t.type === "income" && t.date.startsWith(m.key)).reduce((s, t) => s + t.amt, 0);
     const be = txns.filter(t => t.type === "expense" && t.date.startsWith(m.key)).reduce((s, t) => s + t.amt, 0);
-    return { ...m, i: bi, e: be };
+    const bt = txns.filter(t => t.type === "transfer" && t.date.startsWith(m.key)).reduce((s, t) => s + t.amt, 0);
+    return { ...m, i: bi, e: be, t: bt };
   });
-  const maxB = Math.max(...bars.flatMap(b => [b.i, b.e]), 1);
+  const maxB = Math.max(...bars.flatMap(b => [b.i, b.e, b.t]), 1);
 
   return (
     <div className="tab-content" style={{ paddingBottom: 20 }}>
@@ -883,9 +893,10 @@ function StatsTab({ txns, cfg, cCats, T, tr }) {
             return (
               <div key={i} onClick={() => { setSM(b.month); setSY(b.year); }}
                 style={s.col({ flex: 1, alignItems: "center", gap: 6, cursor: "pointer" })}>
-                <div style={s.row({ gap: 4, alignItems: "flex-end", height: 100 })}>
-                  <div style={{ width: 10, borderRadius: "4px 4px 0 0", background: T.green, height: `${(b.i / maxB) * 100}px`, opacity: active ? 1 : .3, transition: "height .7s,opacity .2s" }} />
-                  <div style={{ width: 10, borderRadius: "4px 4px 0 0", background: T.red, height: `${(b.e / maxB) * 100}px`, opacity: active ? 1 : .3, transition: "height .7s,opacity .2s" }} />
+                <div style={s.row({ gap: 3, alignItems: "flex-end", height: 100 })}>
+                  <div style={{ width: 7, borderRadius: "4px 4px 0 0", background: T.green, height: `${(b.i / maxB) * 100}px`, opacity: active ? 1 : .3, transition: "height .7s,opacity .2s" }} />
+                  <div style={{ width: 7, borderRadius: "4px 4px 0 0", background: T.accent, height: `${(b.t / maxB) * 100}px`, opacity: active ? 1 : .3, transition: "height .7s,opacity .2s" }} />
+                  <div style={{ width: 7, borderRadius: "4px 4px 0 0", background: T.red, height: `${(b.e / maxB) * 100}px`, opacity: active ? 1 : .3, transition: "height .7s,opacity .2s" }} />
                 </div>
                 <span style={{ fontSize: 10, color: active ? T.accent : T.muted, fontWeight: active ? 800 : 500 }}>{b.label}</span>
               </div>
@@ -893,6 +904,35 @@ function StatsTab({ txns, cfg, cCats, T, tr }) {
           })}
         </div>
       </div>
+
+      {mTr > 0 && (
+        <div style={s.card(T, { marginBottom: 16 })}>
+          <div style={s.row({ justifyContent: "space-between", marginBottom: 6 })}>
+            <div style={s.row({ gap: 8 })}>
+              <span style={{ fontSize: 16 }}>🔄</span>
+              <span style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Internal Adjustments</span>
+            </div>
+            <span style={{ fontSize: 14, fontWeight: 900, color: T.accent }}>{money(mTr, cfg)}</span>
+          </div>
+          <div style={{ fontSize: 11, color: T.muted, marginBottom: 16 }}>Net flow between your buckets this month</div>
+          
+          {flowArr.map(([id, amt], i) => {
+             const acc = accs?.find(a => a.id === id) || { name: "Deleted Account", icon: "🏦" };
+             const isPos = amt > 0;
+             return (
+               <div key={id} style={s.row({ justifyContent: "space-between", padding: "10px 0", borderBottom: i < flowArr.length - 1 ? `1px solid ${T.sep}` : "none" })}>
+                 <div style={s.row({ gap: 10 })}>
+                   <span style={{ fontSize: 18 }}>{acc.icon}</span>
+                   <span style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{acc.name}</span>
+                 </div>
+                 <span style={{ fontSize: 13, fontWeight: 800, color: isPos ? T.accent : T.sub }}>
+                   {isPos ? "+" : ""}{money(amt, cfg)}
+                 </span>
+               </div>
+             );
+          })}
+        </div>
+      )}
 
       {top.length > 0 && (
         <div style={s.card(T)}>
