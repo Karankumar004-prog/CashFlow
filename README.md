@@ -1,16 +1,34 @@
-# React + Vite
+# CashFlow Pro 
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A premium, privacy-focused personal finance application designed for professionals who value efficiency, speed, and complete ownership of their data. Built with React and wrapped in Capacitor for native Android deployment.
 
-Currently, two official plugins are available:
+## 🚀 Overview
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+CashFlow Pro moves beyond simple income/expense tracking by implementing a strict **Double-Entry Accounting** system. It allows users to track their external cash flow alongside the internal velocity of their money (transfers) without distorting their true net worth. 
 
-## React Compiler
+There are no ads, no central servers, and no data harvesting. Your financial data lives entirely on your device.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## ✨ Key Features
 
-## Expanding the ESLint configuration
+* **Privacy-First Architecture:** 100% offline functionality. Data is written directly to local device storage.
+* **Double-Entry Ledger:** Seamlessly transfer funds between custom accounts (Bank, Wallet, Brokerage) with perfect balance reconciliation.
+* **Scoped Storage Exports:** Export raw JSON backups and CSV reports directly to the native Android `Documents` folder without requiring intrusive, system-wide storage permissions.
+* **Cloud Sync:** Optional, user-authenticated Google Drive integration for secure, private cloud backups.
+* **Dynamic Analytics:** Instantly toggle between bar charts and native SVG line charts to visualize 6-month capital flow (Income, Expenses, and Internal Transfers).
+* **Bank-Grade Security:** Optional PIN-lock screen with device haptic feedback and background-blur auto-locking.
+* **Global Ready:** Built-in i18n supporting 8 languages with dynamic currency and number formatting.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## 🛠 Tech Stack
+
+* **Core:** React (Functional Components, Hooks)
+* **Native Bridge:** Capacitor (Filesystem, Haptics)
+* **Styling:** Custom CSS, Inline SVGs, responsive dark/light mode theming
+* **State Management:** Optimized `useMemo` caching and `localStorage` syncing
+
+## 📦 Build Instructions
+
+This project is configured for deployment as a native Android APK via Capacitor.
+
+1. **Install Dependencies:**
+   ```bash
+   npm install
