@@ -32,3 +32,20 @@ This project is configured for deployment as a native Android APK via Capacitor.
 1. **Install Dependencies:**
    ```bash
    npm install
+   
+2. **Build the Web Assets:**
+   ```bash
+   npm run build
+   
+3. **Sync to Capacitor:**
+   ```bash
+   npx cap sync android
+   
+4. **Compile the APK:**
+   Open the project in Android Studio to build your signed APK/AAB bundle for deployment.
+   ```bash
+   npx cap open android
+
+## 📄 License & Ownership
+
+Proprietary software. Owned and maintained by **Engineers Classic Innovator: Mr White**.
