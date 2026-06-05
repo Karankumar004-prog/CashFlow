@@ -49,20 +49,29 @@ const LIGHT = {
 // ─── DATA ────────────────────────────────────────────────────────────────────
 const CATS = {
   income: [
-    { id: "salary", l: "Salary", i: "💼", c: "#00C896" }, { id: "freelance", l: "Freelance", i: "💻", c: "#00B8D9" },
-    { id: "investment", l: "Invest", i: "📈", c: "#36B37E" }, { id: "gift", l: "Gift", i: "🎁", c: "#6554C0" },
-    { id: "rental", l: "Rental", i: "🏠", c: "#00A870" }, { id: "business", l: "Business", i: "🏢", c: "#0065FF" },
-    { id: "bonus", l: "Bonus", i: "⭐", c: "#FF8B00" }, { id: "oth_i", l: "Other", i: "✨", c: "#888888" },
+    { id: "salary", l: "Salary", i: "💵", c: "#10b981" },
+    { id: "dividends", l: "Dividends", i: "📈", c: "#0ea5e9" },
+    { id: "business", l: "Business", i: "🏢", c: "#8b5cf6" },
+    { id: "gifts", l: "Gifts", i: "🎁", c: "#f43f5e" },
+    { id: "interest", l: "Interest", i: "💰", c: "#10b981" },
+    { id: "other_inc", l: "Other", i: "💎", c: "#f59e0b" }
   ],
   expense: [
-    { id: "food", l: "Food", i: "🍔", c: "#FF4D4D" }, { id: "transport", l: "Transport", i: "🚗", c: "#FF8B00" },
-    { id: "shopping", l: "Shopping", i: "🛍️", c: "#E040FB" }, { id: "bills", l: "Bills", i: "📄", c: "#FF7452" },
-    { id: "health", l: "Health", i: "❤️", c: "#FF4D4D" }, { id: "fun", l: "Fun", i: "🎬", c: "#BF2600" },
-    { id: "education", l: "Study", i: "📚", c: "#FF8B00" }, { id: "rent", l: "Rent", i: "🏠", c: "#FF4D4D" },
-    { id: "travel", l: "Travel", i: "✈️", c: "#00B8D9" }, { id: "fitness", l: "Fitness", i: "💪", c: "#36B37E" },
-    { id: "oth_e", l: "Other", i: "📦", c: "#888888" },
-  ],
+    { id: "food", l: "Food", i: "🍔", c: "#f43f5e" },
+    { id: "groceries", l: "Groceries", i: "🛒", c: "#10b981" },
+    { id: "transport", l: "Transport", i: "🚗", c: "#3b82f6" },
+    { id: "housing", l: "Housing", i: "🏠", c: "#8b5cf6" },
+    { id: "bills", l: "Bills", i: "🧾", c: "#f59e0b" },
+    { id: "investing", l: "Investing", i: "📈", c: "#0ea5e9" },
+    { id: "emi", l: "EMI/Debt", i: "💳", c: "#ef4444" },
+    { id: "health", l: "Health", i: "🏥", c: "#ec4899" },
+    { id: "education", l: "Education", i: "🎓", c: "#6366f1" },
+    { id: "shopping", l: "Shopping", i: "🛍️", c: "#d946ef" },
+    { id: "entertainment", l: "Entertain", i: "🍿", c: "#8b5cf6" },
+    { id: "other_exp", l: "Other", i: "🧩", c: "#64748b" }
+  ]
 };
+
 const CURR = [{ code: "USD", sym: "$" }, { code: "EUR", sym: "€" }, { code: "GBP", sym: "£" }, { code: "JPY", sym: "¥" }, { code: "INR", sym: "₹" }, { code: "PKR", sym: "₨" }, { code: "AED", sym: "د.إ" }, { code: "CAD", sym: "CA$" }];
 const LANGS = ["English", "Español", "हिन्दी", "Français", "Deutsch", "العربية", "中文", "Português"];
 const NFMTS = ["1,234.56", "1.234,56", "1234.56"];
@@ -231,50 +240,66 @@ function TxCard({ t, cfg, cCats, T, onEdit, onDel, accs, showAcc }) {
 
 function PieChart({ inc, exp, T, cfg, tr }) {
   const total = inc + exp;
-  if (!total) return <div style={{ textAlign: "center", color: T.muted, padding: "32px 0", fontSize: 14 }}>{tr("noTxns")}</div>;
-  const R = 65, CX = 75, CY = 75;
-  const toXY = a => { const r = (a - 90) * Math.PI / 180; return { x: CX + R * Math.cos(r), y: CY + R * Math.sin(r) }; };
-  const arc = (s2, e) => {
-    if (e - s2 >= 359.9) return `M${CX} ${CY - R} A${R} ${R} 0 1 1 ${CX - .01} ${CY - R} Z`;
-    const p = toXY(s2), q = toXY(e), lg = e - s2 > 180 ? 1 : 0;
-    return `M${CX} ${CY} L${p.x} ${p.y} A${R} ${R} 0 ${lg} 1 ${q.x} ${q.y} Z`;
-  };
-  const iAng = (inc / total) * 360, iPct = Math.round((inc / total) * 100), ePct = 100 - iPct;
-  
+  if (!total) return <div style={{ textAlign: "center", color: T.muted, padding: "32px 0", fontSize: 14 }}>{tr("noTxns") || "No transactions"}</div>;
+
+  // Percentage Math
+  const iPct = Math.round((inc / total) * 100);
+  const ePct = 100 - iPct;
   const net = inc - exp;
   const netPct = total > 0 ? Math.round((Math.abs(net) / total) * 100) : 0;
   const netColor = net >= 0 ? T.green : T.red;
 
+  // Math for the SVG strokes (Perfectly proportioned)
+  const R = 48, CX = 60, CY = 60; 
+  const C = 2 * Math.PI * R;
+  const iStroke = (inc / total) * C;
+  const eStroke = (exp / total) * C;
+
   return (
-    <div style={s.row({ gap: 20, alignItems: "center" })}>
-      <svg width={150} height={150} viewBox="0 0 150 150" style={{ flexShrink: 0 }}>
-        {exp > 0 && <path d={arc(iAng >= 360 ? 0 : iAng, 360)} fill={T.red} opacity=".9" />}
-        {inc > 0 && iAng > 0 && <path d={arc(0, Math.min(iAng, 359.9))} fill={T.green} opacity=".9" />}
-        <circle cx={CX} cy={CY} r={46} fill={T.bg2} />
-        
-        {/* OLD STYLE NET CENTER RESTORED WITH DYNAMIC COLOR AND PERCENTAGE */}
-        <text x={CX} y={CY - 12} textAnchor="middle" fill={T.muted} fontSize="10" fontWeight="700" fontFamily="DM Sans,sans-serif">{tr("net")}</text>
-        <text x={CX} y={CY + 4} textAnchor="middle" fill={netColor} fontSize="14" fontWeight="900" fontFamily="DM Sans,sans-serif">
-          {net >= 0 ? "+" : "-"}{money(Math.abs(net), cfg).replace(getSym(cfg), "")}
-        </text>
-        <text x={CX} y={CY + 18} textAnchor="middle" fill={T.text} fontSize="11" fontWeight="800" fontFamily="DM Sans,sans-serif">
-          {netPct}%
-        </text>
-      </svg>
-      <div style={s.col({ flex: 1, gap: 16 })}>
-        {[[T.green, tr("income"), inc, iPct], [T.red, tr("expense"), exp, ePct]].map(([c, l, v, pct]) => (
+    <div style={s.row({ gap: 20, alignItems: "center", width: "100%" })}>
+      
+      {/* LEFT SIDE: PERFECTLY SIZED RING CHART */}
+      <div style={{ position: "relative", width: 120, height: 120, flexShrink: 0 }}>
+        <svg width={120} height={120} viewBox="0 0 120 120" style={{ transform: "rotate(-90deg)", filter: `drop-shadow(0 6px 12px ${T.bg}90)` }}>
+          <circle cx={CX} cy={CY} r={R} fill="none" stroke={T.bg2} strokeWidth="12" />
+          
+          {/* Flat edges guarantee 100% mathematical accuracy */}
+          {exp > 0 && (
+            <circle cx={CX} cy={CY} r={R} fill="none" stroke={T.red} strokeWidth="12" 
+              strokeDasharray={`${eStroke} ${C}`} style={{ transition: "stroke-dasharray 1s ease" }} />
+          )}
+          
+          {inc > 0 && (
+            <circle cx={CX} cy={CY} r={R} fill="none" stroke={T.green} strokeWidth="12" 
+              strokeDasharray={`${iStroke} ${C}`} strokeDashoffset={-eStroke} style={{ transition: "stroke-dasharray 1s ease" }} />
+          )}
+        </svg>
+
+        {/* MINIMAL CENTER TEXT */}
+        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+          <span style={{ fontSize: 13, color: T.muted, fontWeight: 800 }}>Net</span>
+          <span style={{ fontSize: 18, fontWeight: 900, color: netColor, marginTop: 2 }}>
+            {net >= 0 ? "+" : "-"}{netPct}%
+          </span>
+        </div>
+      </div>
+
+      {/* RIGHT SIDE: COMPACT LEGEND */}
+      <div style={s.col({ flex: 1, gap: 12 })}>
+        {[[T.green, tr("income") || "Income", inc, iPct + "%"], [T.red, tr("expense") || "Expense", exp, ePct + "%"], [netColor, tr("net") || "Net", Math.abs(net), netPct + "%"]].map(([c, l, v, pct]) => (
           <div key={l}>
-            <div style={s.row({ justifyContent: "space-between", marginBottom: 4 })}>
+            <div style={s.row({ justifyContent: "space-between", marginBottom: 2 })}>
               <div style={s.row({ gap: 8 })}>
-                <div style={{ width: 12, height: 12, borderRadius: 3, background: c }} />
-                <span style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{l}</span>
+                <div style={{ width: 10, height: 10, borderRadius: 3, background: c }} />
+                <span style={{ fontSize: 12, color: T.muted, fontWeight: 700, textTransform: "uppercase" }}>{l}</span>
               </div>
-              <span style={{ fontSize: 12, fontWeight: 800, color: c }}>{pct}%</span>
+              <span style={{ fontSize: 12, fontWeight: 800, color: c }}>{pct}</span>
             </div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>{money(v, cfg)}</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.text, paddingLeft: 18 }}>{money(v, cfg)}</div>
           </div>
         ))}
       </div>
+
     </div>
   );
 }
@@ -437,16 +462,38 @@ function LockScreen({ T, cfg, onUnlock, tr }) {
   const [pin, setPin] = useState("");
   const [err, setErr] = useState(false);
 
+  const handleBio = async () => {
+    try {
+      const bio = await NativeBiometric.isAvailable();
+      if (bio.isAvailable) {
+        // Wait for the native prompt to succeed. If it fails, it throws an error to the catch block.
+        await NativeBiometric.verifyIdentity({
+          reason: "Unlock CashFlow",
+          title: "Authentication Required"
+        });
+        // If we reach this line, the fingerprint was SUCCESSFUL!
+        onUnlock(); 
+      }
+    } catch (e) {
+      // Failed or cancelled - user is left safely on the PIN pad.
+    }
+  };
+
+  useEffect(() => {
+    if (cfg.useBiometrics) handleBio();
+  }, [cfg.useBiometrics]);
+
   const handlePress = async (n) => {
     if (err) return;
+    try { await Haptics.impact({ style: 'light' }); } catch (e) {} // Haptic feedback on tap
+    
     const next = pin + n;
     setPin(next);
     if (next.length === cfg.password.length) {
       if (next === cfg.password) setTimeout(onUnlock, 150);
       else {
         setErr(true);
-        try { await Haptics.vibrate(); } catch (e) { } // Triggers device vibration on wrong PIN
-        // Wait 500ms so the user sees the red dots shake before clearing
+        try { await Haptics.vibrate(); } catch (e) { } 
         setTimeout(() => { setPin(""); setErr(false); }, 500);
       }
     }
@@ -458,7 +505,6 @@ function LockScreen({ T, cfg, onUnlock, tr }) {
       <div style={{ marginBottom: 32 }}><AppLogo size={72} /></div>
       <div style={{ fontSize: 20, fontWeight: 800, color: T.text, marginBottom: 24 }}>{tr("appPwd") || "App Password"}</div>
 
-      {/* SHAKE ANIMATION AND RED DOTS */}
       <div className={err ? "shake-anim" : ""} style={s.row({ gap: 14, marginBottom: 48, height: 20 })}>
         {Array.from({ length: cfg.password.length }).map((_, i) => (
           <div key={i} style={{ width: 16, height: 16, borderRadius: "50%", background: err ? T.red : (i < pin.length ? T.accent : T.bg3), transition: "background .2s ease" }} />
@@ -466,11 +512,18 @@ function LockScreen({ T, cfg, onUnlock, tr }) {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20, width: "100%", maxWidth: 300 }}>
-        {/* ADDED .pin-btn CLASS AND SHADOWS FOR LIGHT MODE POP */}
         {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
           <button key={n} className="pin-btn" onClick={() => handlePress(n.toString())} style={{ height: 70, borderRadius: 35, background: T.bg2, fontSize: 26, fontWeight: 600, color: T.text, boxShadow: `0 4px 12px ${T.sep}` }}>{n}</button>
         ))}
-        <div />
+        
+        {cfg.useBiometrics ? (
+          <button className="pin-btn" onClick={handleBio} style={{ height: 70, borderRadius: 35, background: "transparent", fontSize: 28, color: T.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/><path d="M14 13.12c0 2.38 0 6.38-1 8.88"/><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"/><path d="M2 12a10 10 0 0 1 18-6"/><path d="M2 16h.01"/><path d="M21.8 16c.2-2 .131-5.354 0-6"/><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2"/><path d="M8.65 22c.21-.66.45-1.32.57-2"/><path d="M9 6.8a6 6 0 0 1 9 5.2v2"/>
+            </svg>
+          </button>
+        ) : <div />}
+
         <button className="pin-btn" onClick={() => handlePress("0")} style={{ height: 70, borderRadius: 35, background: T.bg2, fontSize: 26, fontWeight: 600, color: T.text, boxShadow: `0 4px 12px ${T.sep}` }}>0</button>
         <button className="pin-btn" onClick={handleDel} style={{ height: 70, borderRadius: 35, background: "transparent", fontSize: 26, color: T.muted }}>⌫</button>
       </div>
@@ -493,11 +546,11 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [unlocked, setUnlocked] = useState(!cfg.passwordEnabled);
 
-  const lockTimer = useRef(null); // <-- ADD THIS FOR THE 3-MINUTE TIMER
+  const lockTimer = useRef(null); 
   const [txFilter, setTxFilter] = useState({ type: "all", cat: "all" });
   const goToTxns = (filters) => { setTxFilter(prev => ({ ...prev, ...filters })); setTab("txns"); };
 
-  // 1. Advanced Background Locking Engine (3-minute timer + Biometrics)
+  // 1. Advanced Background Locking Engine (3-minute timer)
   useEffect(() => {
     const handleState = async ({ isActive }) => {
       if (!isActive) {
@@ -511,48 +564,13 @@ export default function App() {
           clearTimeout(lockTimer.current);
           lockTimer.current = null;
         }
-
-        // If locked AND biometrics are enabled, try Biometrics instantly
-        if (!unlocked && cfg.passwordEnabled && cfg.useBiometrics) {
-          try {
-            const bio = await NativeBiometric.isAvailable();
-            if (bio.isAvailable) {
-              const verified = await NativeBiometric.verifyIdentity({
-                reason: "Unlock CashFlow",
-                title: "Authentication Required"
-              });
-              if (verified) setUnlocked(true);
-            }
-          } catch (e) {
-            // Failed or cancelled, user will just use the PIN pad
-          }
-        }
+        // Biometrics are now safely handled by the LockScreen component mounting!
       }
     };
 
     const sub = CapApp.addListener('appStateChange', handleState);
-
-    // 1.5 Initial Cold-Start Biometric Check
-  useEffect(() => {
-    const initBio = async () => {
-      if (!unlocked && cfg.passwordEnabled && cfg.useBiometrics) {
-        try {
-          const bio = await NativeBiometric.isAvailable();
-          if (bio.isAvailable) {
-            const verified = await NativeBiometric.verifyIdentity({
-              reason: "Unlock CashFlow",
-              title: "Authentication Required"
-            });
-            if (verified) setUnlocked(true);
-          }
-        } catch (e) { } // Fallback to PIN pad if failed
-      }
-    };
-    initBio();
-  }, []);
-
     return () => sub.remove();
-  }, [cfg.passwordEnabled, unlocked]);
+  }, [cfg.passwordEnabled]);
 
   // 2. Lock Zooming on mobile via viewport tag injection
   useEffect(() => {
@@ -582,16 +600,18 @@ export default function App() {
 
   // Helper to verify permissions before exporting
   const ensureStoragePermission = async () => {
-    try {
-      let status = await Filesystem.checkPermissions();
-      if (status.publicStorage !== 'granted') {
-        status = await Filesystem.requestPermissions();
-      }
-      return status.publicStorage === 'granted';
-    } catch (e) {
-      return true; // Failsafe for web browsers where this native plugin doesn't apply
-    }
-  };
+  try {
+    const check = await Filesystem.checkPermissions();
+    if (check.publicStorage === 'granted') return true;
+    
+    // If not granted, trigger the Android native popup
+    const req = await Filesystem.requestPermissions();
+    return req.publicStorage === 'granted';
+  } catch (e) {
+    // Fails silently on the web, allows it to pass
+    return true; 
+  }
+};
 
   // Translation Engine
   const tr = (key) => DICT[cfg.language]?.[key] || DICT["English"][key] || key;
@@ -795,10 +815,13 @@ export default function App() {
         {tab === "settings" && <SettingsTab cfg={cfg} setSetting={setSetting} T={T} localBackup={localBackup} driveBackup={driveBackup} driveRestore={driveRestore} openModal={openModal} gUser={gUser} gLogin={() => gLogin().then(t => t && showToast("✅ Signed in"))} gSignOut={gSignOut} cCats={cCats} onAddCat={() => openModal("addCat")} onDelCat={delCat} G_ID={G_ID} tr={tr} />}
       </div>
 
-      <button className="fab-btn" onClick={() => openModal("addTx")}
-        style={{ position: "fixed", bottom: 80, right: 16, width: 60, height: 60, borderRadius: "50%", background: `linear-gradient(135deg,${T.accent},${T.adk})`, color: "#fff", fontSize: 32, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 101, boxShadow: `0 8px 24px ${T.accent}55` }}>
-        +
-      </button>
+      {/* ADD BUTTON (HIDDEN ON SETTINGS TAB) */}
+      {tab !== "settings" && (
+        <button className="fab-btn" onClick={() => openModal("addTx")}
+          style={{ position: "fixed", bottom: 80, right: 16, width: 60, height: 60, borderRadius: "50%", background: `linear-gradient(135deg,${T.accent},${T.adk})`, color: "#fff", fontSize: 32, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 101, boxShadow: `0 8px 24px ${T.accent}55` }}>
+          +
+        </button>
+      )}
 
       <nav style={{ position: "fixed", bottom: 0, left: 0, width: "100%", background: T.nav, borderTop: `1px solid ${T.sep}`, display: "flex", justifyContent: "space-around", padding: "8px 0 20px", zIndex: 100 }}>
         {TABS.map(n => (
@@ -1057,8 +1080,13 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr, txFi
     if (fromD) r = r.filter(t => t.date >= fromD);
     if (toD) r = r.filter(t => t.date <= toD);
     if (query.trim()) {
-      const q = query.toLowerCase();
-      r = r.filter(t => t.note.toLowerCase().includes(q) || getCat(t.cat, cCats).l.toLowerCase().includes(q) || t.date.includes(q) || String(t.amt).includes(q));
+      // SMART SEARCH: Splits by commas OR spaces
+      const keywords = query.toLowerCase().split(/[\s,]+/).filter(k => k);
+      r = r.filter(t => {
+        const searchStr = `${t.note} ${getCat(t.cat, cCats).l} ${t.date} ${t.amt}`.toLowerCase();
+        // Returns true if ANY of the typed tags match this transaction
+        return keywords.some(k => searchStr.includes(k));
+      });
     }
     return [...r].sort((a, b) => b.date.localeCompare(a.date));
   }, [txns, p, query, accF, fromD, toD, cCats]);
@@ -1111,17 +1139,26 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr, txFi
 
       <PBar p={p} set={setP} T={T} tr={tr} />
 
-      {/* NEW SEARCH QUERY BADGE */}
+      {/* NEW MULTI-TAG SEARCH CHIPS */}
       {query.trim() !== "" && !showS && (
-        <div style={s.row({ gap: 8, marginBottom: 12 })}>
-          <span style={{ fontSize: 13, color: T.muted }}>Searched:</span>
-          <button onClick={() => setQuery("")} style={{ padding: "4px 10px", borderRadius: 12, background: T.accent+"22", color: T.accent, fontSize: 12, fontWeight: 700 }}>
-            "{query}" ✕
-          </button>
+        <div style={s.row({ gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" })}>
+          <span style={{ fontSize: 13, color: T.muted }}>Tags:</span>
+          {query.split(/[\s,]+/).filter(k => k).map((k, i) => (
+            <button key={i} onClick={() => {
+              // Removes just the clicked tag from the search query
+              const newQ = query.split(/[\s,]+/).filter(w => w && w !== k).join(" ");
+              setQuery(newQ);
+            }} style={{ padding: "4px 10px", borderRadius: 12, background: T.accent+"22", color: T.accent, fontSize: 12, fontWeight: 700 }}>
+              {k} ✕
+            </button>
+          ))}
+          {query.split(/[\s,]+/).filter(k => k).length > 1 && (
+            <button onClick={() => setQuery("")} style={{ padding: "4px 10px", borderRadius: 12, background: T.red+"15", color: T.red, fontSize: 12, fontWeight: 700 }}>Clear All</button>
+          )}
         </div>
       )}
 
-      {/* NEW CLEAR CATEGORY BADGE */}
+      {/* CLEAR CATEGORY BADGE */}
       {txFilter.cat !== "all" && (
         <div style={s.row({ gap: 8, marginBottom: 12 })}>
           <span style={{ fontSize: 13, color: T.muted }}>Filtered by:</span>
