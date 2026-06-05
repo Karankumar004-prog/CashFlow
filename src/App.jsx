@@ -240,27 +240,38 @@ function PieChart({ inc, exp, T, cfg, tr }) {
     return `M${CX} ${CY} L${p.x} ${p.y} A${R} ${R} 0 ${lg} 1 ${q.x} ${q.y} Z`;
   };
   const iAng = (inc / total) * 360, iPct = Math.round((inc / total) * 100), ePct = 100 - iPct;
+  
+  const net = inc - exp;
+  const netPct = total > 0 ? Math.round((Math.abs(net) / total) * 100) : 0;
+  const netColor = net >= 0 ? T.green : T.red;
+
   return (
-    <div style={s.row({ gap: 16, alignItems: "center", justifyContent: "center" })}>
-      <svg width={130} height={130} viewBox="0 0 150 150" style={{ flexShrink: 0 }}>
+    <div style={s.row({ gap: 20, alignItems: "center" })}>
+      <svg width={150} height={150} viewBox="0 0 150 150" style={{ flexShrink: 0 }}>
         {exp > 0 && <path d={arc(iAng >= 360 ? 0 : iAng, 360)} fill={T.red} opacity=".9" />}
         {inc > 0 && iAng > 0 && <path d={arc(0, Math.min(iAng, 359.9))} fill={T.green} opacity=".9" />}
         <circle cx={CX} cy={CY} r={46} fill={T.bg2} />
-        <text x={CX} y={CY + 8} textAnchor="middle" fill={T.text} fontSize="22" fontWeight="900" fontFamily="DM Sans,sans-serif">
-          {Math.abs(iPct - ePct)}%
+        
+        {/* OLD STYLE NET CENTER RESTORED WITH DYNAMIC COLOR AND PERCENTAGE */}
+        <text x={CX} y={CY - 12} textAnchor="middle" fill={T.muted} fontSize="10" fontWeight="700" fontFamily="DM Sans,sans-serif">{tr("net")}</text>
+        <text x={CX} y={CY + 4} textAnchor="middle" fill={netColor} fontSize="14" fontWeight="900" fontFamily="DM Sans,sans-serif">
+          {net >= 0 ? "+" : "-"}{money(Math.abs(net), cfg).replace(getSym(cfg), "")}
+        </text>
+        <text x={CX} y={CY + 18} textAnchor="middle" fill={T.text} fontSize="11" fontWeight="800" fontFamily="DM Sans,sans-serif">
+          {netPct}%
         </text>
       </svg>
-      <div style={s.col({ flex: 1, gap: 12 })}>
-        {[[T.green, tr("income"), inc, iPct + "%"], [T.red, tr("expense"), exp, ePct + "%"], [inc >= exp ? T.green : T.red, tr("net"), Math.abs(inc - exp), ""]].map(([c, l, v, pct]) => (
+      <div style={s.col({ flex: 1, gap: 16 })}>
+        {[[T.green, tr("income"), inc, iPct], [T.red, tr("expense"), exp, ePct]].map(([c, l, v, pct]) => (
           <div key={l}>
-            <div style={s.row({ justifyContent: "space-between", marginBottom: 2 })}>
+            <div style={s.row({ justifyContent: "space-between", marginBottom: 4 })}>
               <div style={s.row({ gap: 8 })}>
-                <div style={{ width: 10, height: 10, borderRadius: 3, background: c }} />
-                <span style={{ fontSize: 12, color: T.muted, fontWeight: 700, textTransform: "uppercase" }}>{l}</span>
+                <div style={{ width: 12, height: 12, borderRadius: 3, background: c }} />
+                <span style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{l}</span>
               </div>
-              <span style={{ fontSize: 12, fontWeight: 800, color: c }}>{pct}</span>
+              <span style={{ fontSize: 12, fontWeight: 800, color: c }}>{pct}%</span>
             </div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: T.text, paddingLeft: 18 }}>{money(v, cfg)}</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>{money(v, cfg)}</div>
           </div>
         ))}
       </div>
@@ -520,6 +531,26 @@ export default function App() {
     };
 
     const sub = CapApp.addListener('appStateChange', handleState);
+
+    // 1.5 Initial Cold-Start Biometric Check
+  useEffect(() => {
+    const initBio = async () => {
+      if (!unlocked && cfg.passwordEnabled && cfg.useBiometrics) {
+        try {
+          const bio = await NativeBiometric.isAvailable();
+          if (bio.isAvailable) {
+            const verified = await NativeBiometric.verifyIdentity({
+              reason: "Unlock CashFlow",
+              title: "Authentication Required"
+            });
+            if (verified) setUnlocked(true);
+          }
+        } catch (e) { } // Fallback to PIN pad if failed
+      }
+    };
+    initBio();
+  }, []);
+
     return () => sub.remove();
   }, [cfg.passwordEnabled, unlocked]);
 
@@ -1341,75 +1372,38 @@ function SettingsTab({ cfg, setSetting, T, localBackup, driveBackup, driveRestor
 // ─── MODALS ───────────────────────────────────────────────────────────────────
 function TxModal({ T, accs, allCats, cfg, onSubmit, onClose, editTx, tr }) {
   const [type, setType] = useState(editTx?.type || "expense");
+  const [showCalc, setShowCalc] = useState(false);
+  const [calcStr, setCalcStr] = useState("");
 
-  // REPLACED FORM STATE TO SUPPORT DRAFTS
   const [form, setForm] = useState(() => {
-    // 1. If editing an existing transaction, use its data
     if (editTx) {
-      return {
-        aid: editTx.aid || accs[0]?.id || "",
-        toAid: editTx.toAid || (accs.length > 1 ? accs[1].id : ""),
-        cat: editTx.cat || "",
-        amt: editTx.amt?.toString() || "",
-        note: editTx.note || "",
-        date: editTx.date || today(),
-        time: editTx.time || nowT(),
-      };
+      return { aid: editTx.aid || accs[0]?.id || "", toAid: editTx.toAid || (accs.length > 1 ? accs[1].id : ""), cat: editTx.cat || "", amt: editTx.amt?.toString() || "", note: editTx.note || "", date: editTx.date || today(), time: editTx.time || nowT() };
     }
-
-    // 2. Try to load draft from localStorage
     const draft = localStorage.getItem("cf_draft");
     if (draft) return JSON.parse(draft);
-
-    // 3. Otherwise, clean slate
-    return {
-      aid: accs[0]?.id || "",
-      toAid: accs.length > 1 ? accs[1].id : "",
-      cat: "",
-      amt: "",
-      note: "",
-      date: today(),
-      time: nowT(),
-    };
+    return { aid: accs[0]?.id || "", toAid: accs.length > 1 ? accs[1].id : "", cat: "", amt: "", note: "", date: today(), time: nowT() };
   });
 
-  // AUTO-SAVE DRAFT ON CHANGE
-  useEffect(() => {
-    if (!editTx) {
-      localStorage.setItem("cf_draft", JSON.stringify(form));
-    }
-  }, [form, editTx]);
+  useEffect(() => { if (!editTx) localStorage.setItem("cf_draft", JSON.stringify(form)); }, [form, editTx]);
 
   const [err, setErr] = useState("");
   const cats = allCats[type] || [];
   const ac = type === "income" ? T.green : type === "expense" ? T.red : T.accent;
   const sy = getSym(cfg);
 
-  // 1. ADD THIS HELPER INSIDE TxModal:
-  const evalMath = (e) => {
-    if (e) e.preventDefault();
+  // REAL-TIME CALCULATOR ENGINE
+  const getCalcPreview = () => {
     try {
-      // Clean letters and strip trailing operators (like '500+') so math doesn't crash
-      let sanitized = form.amt.toString().replace(/[^0-9+\-*/.]/g, '');
-      sanitized = sanitized.replace(/[+\-*/.]+$/, ''); 
-      if (!sanitized || sanitized === form.amt.toString()) return form.amt;
-      
+      const sanitized = calcStr.toString().replace(/[^0-9+\-*/.]/g, '').replace(/[+\-*/.]+$/, '');
+      if (!sanitized) return "";
       const res = new Function('return ' + sanitized)();
-      const final = parseFloat(res).toFixed(2).replace(/\.00$/, '');
-      
-      if (final !== "NaN" && final !== "Infinity") {
-         setForm(f => ({ ...f, amt: final }));
-         return final;
-      }
-      return form.amt;
-    } catch (err) {
-      return form.amt;
-    }
+      const num = parseFloat(res);
+      return isNaN(num) || !isFinite(num) ? "" : num.toFixed(2).replace(/\.00$/, '');
+    } catch(e) { return ""; }
   };
 
-  // REPLACED SUBMIT FUNCTION TO CLEAR DRAFT
   const submit = () => {
-    const finalAmt = evalMath(); // Evaluate math first
+    const finalAmt = form.amt;
     if (!finalAmt || isNaN(+finalAmt) || +finalAmt <= 0) { setErr("Enter a valid amount"); return; }
     if (type !== "transfer" && !form.cat) { setErr("Select a category"); return; }
     if (!form.aid) { setErr("Select an account"); return; }
@@ -1417,7 +1411,6 @@ function TxModal({ T, accs, allCats, cfg, onSubmit, onClose, editTx, tr }) {
       if (!form.toAid) { setErr("Select a destination account"); return; }
       if (form.aid === form.toAid) { setErr("Source and destination must be different"); return; }
     }
-
     localStorage.removeItem("cf_draft");
     onSubmit({ ...(editTx || {}), ...form, amt: parseFloat(finalAmt), type });
   };
@@ -1441,17 +1434,56 @@ function TxModal({ T, accs, allCats, cfg, onSubmit, onClose, editTx, tr }) {
         <div style={{ fontSize: 11, color: ac, fontWeight: 800, letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>
           {type === "income" ? tr("income") : type === "expense" ? tr("expense") : "Transfer Amount"}
         </div>
+        
         <div style={s.row({ gap: 6, alignItems: "center" })}>
           <span style={{ fontSize: 28, color: ac, opacity: .6, fontWeight: 800 }}>{sy}</span>
-          <input type="text" inputMode="decimal" value={form.amt}
-            onChange={e => { setForm(f => ({ ...f, amt: e.target.value })); setErr(""); }}
-            onBlur={evalMath}
+          <input type="text" inputMode="decimal" value={showCalc ? calcStr : form.amt}
+            onChange={e => { 
+               const val = e.target.value.replace(/[^0-9+\-*/.]/g, '');
+               if (showCalc) setCalcStr(val);
+               else { setForm(f => ({ ...f, amt: val })); setErr(""); }
+            }}
             placeholder="0.00"
             style={{ flex: 1, background: "none", fontSize: 44, fontWeight: 900, color: ac, minWidth: 0, letterSpacing: "-1px" }} />
-          <button onClick={evalMath} style={{ width: 44, height: 44, borderRadius: 12, background: ac + "22", color: ac, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            {CalcIco(ac)}
+          <button type="button" onClick={() => { setShowCalc(v => !v); if (!showCalc) setCalcStr(form.amt.toString()); }} 
+            style={{ width: 44, height: 44, borderRadius: 12, background: showCalc ? ac : ac + "22", color: showCalc ? "#fff" : ac, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "background .2s" }}>
+            {CalcIco(showCalc ? "#fff" : ac)}
           </button>
         </div>
+
+        {/* THE NEW POPUP CALCULATOR GRID */}
+        {showCalc && (
+          <div className="drop-enter" style={{ background: T.bg2, borderRadius: 16, padding: "16px 12px 12px", marginTop: 16, boxShadow: `0 8px 24px ${T.bg}80` }}>
+            <div style={s.row({ justifyContent: "space-between", marginBottom: 14, padding: "0 8px" })}>
+               <button type="button" onClick={()=>setCalcStr("")} style={{ color: T.red, fontWeight: 800, padding: "6px 14px", background: T.red+"15", borderRadius: 8, fontSize: 13 }}>CLEAR</button>
+               <span style={{ fontSize: 24, color: T.text, fontWeight: 800 }}>= {getCalcPreview() || "0"}</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+              {["7","8","9","/", "4","5","6","*", "1","2","3","-", ".","0","=","+"].map(btn => {
+                const isOp = ["/","*","-","+"].includes(btn);
+                return (
+                  <button key={btn} type="button" onClick={(e) => {
+                    e.preventDefault();
+                    if (btn === "=") {
+                       const final = getCalcPreview();
+                       if (final) { setForm(f => ({...f, amt: final})); setShowCalc(false); setErr(""); }
+                    } else {
+                       setCalcStr(prev => prev + btn);
+                    }
+                  }} 
+                  style={{ 
+                    padding: "16px 0", borderRadius: 12, fontSize: 20, fontWeight: 800,
+                    background: btn === "=" ? ac : (isOp ? ac+"22" : T.bg3), 
+                    color: btn === "=" ? "#fff" : (isOp ? ac : T.text),
+                    boxShadow: btn === "=" ? `0 4px 12px ${ac}40` : "none"
+                  }}>
+                    {btn}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       <Lbl T={T}>{type === "transfer" ? "From Account" : tr("account")}</Lbl>
@@ -1462,7 +1494,7 @@ function TxModal({ T, accs, allCats, cfg, onSubmit, onClose, editTx, tr }) {
       ) : (
         <div style={s.row({ gap: 10, marginBottom: 20, flexWrap: "wrap" })}>
           {accs.map(a => (
-            <button key={a.id} onClick={() => setForm(f => ({ ...f, aid: a.id }))}
+            <button key={a.id} type="button" onClick={() => setForm(f => ({ ...f, aid: a.id }))}
               style={{
                 padding: "10px 14px", borderRadius: 14, fontSize: 13, fontWeight: 700,
                 background: form.aid === a.id ? a.color + "20" : T.bg3, color: form.aid === a.id ? a.color : T.sub,
@@ -1484,7 +1516,7 @@ function TxModal({ T, accs, allCats, cfg, onSubmit, onClose, editTx, tr }) {
           ) : (
             <div style={s.row({ gap: 10, marginBottom: 20, flexWrap: "wrap" })}>
               {accs.map(a => (
-                <button key={`to-${a.id}`} onClick={() => setForm(f => ({ ...f, toAid: a.id }))}
+                <button key={`to-${a.id}`} type="button" onClick={() => setForm(f => ({ ...f, toAid: a.id }))}
                   style={{
                     padding: "10px 14px", borderRadius: 14, fontSize: 13, fontWeight: 700,
                     background: form.toAid === a.id ? a.color + "20" : T.bg3, color: form.toAid === a.id ? a.color : T.sub,
@@ -1501,7 +1533,7 @@ function TxModal({ T, accs, allCats, cfg, onSubmit, onClose, editTx, tr }) {
           <Lbl T={T}>{tr("category")}</Lbl>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 20 }}>
             {cats.map(c => (
-              <button key={c.id} onClick={() => { setForm(f => ({ ...f, cat: c.id })); setErr(""); }}
+              <button key={c.id} type="button" onClick={() => { setForm(f => ({ ...f, cat: c.id })); setErr(""); }}
                 style={{
                   display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: "14px 4px", borderRadius: 16,
                   background: form.cat === c.id ? c.c + "18" : T.bg3,
@@ -1531,7 +1563,7 @@ function TxModal({ T, accs, allCats, cfg, onSubmit, onClose, editTx, tr }) {
           <Lbl T={T}>Time</Lbl>
           <div style={s.row({ gap: 8 })}>
             <Inp T={T} type="time" value={form.time} onChange={e => setForm(f => ({ ...f, time: e.target.value }))} style={{ flex: 1 }} />
-            <button onClick={() => setForm(f => ({ ...f, time: nowT() }))}
+            <button type="button" onClick={() => setForm(f => ({ ...f, time: nowT() }))}
               style={{ padding: "12px 16px", borderRadius: 12, background: T.accent + "18", color: T.accent, fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
               {tr("nowBtn") || "Now"}
             </button>
