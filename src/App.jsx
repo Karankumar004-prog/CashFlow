@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem'; // This is also needed for web, as we use it for local backups
-import { Haptics } from '@capacitor/haptics'; // <-- Add this new import
+import { Haptics } from '@capacitor/haptics'; // For tactile feedback on mobile devices, enhancing user experience during interactions like button presses and notifications
+import { App as CapApp } from '@capacitor/app'; // To handle app lifecycle events, such as saving data when the app is backgrounded or closed, ensuring data integrity and a seamless user experience
+import { NativeBiometric } from '@capgo/capacitor-native-biometric';
 
 // ─── TRANSLATIONS (i18n) ──────────────────────────────────────────────────────
 const DICT = {
@@ -244,9 +246,12 @@ function PieChart({ inc, exp, T, cfg, tr }) {
         {exp > 0 && <path d={arc(iAng >= 360 ? 0 : iAng, 360)} fill={T.red} opacity=".9" />}
         {inc > 0 && iAng > 0 && <path d={arc(0, Math.min(iAng, 359.9))} fill={T.green} opacity=".9" />}
         <circle cx={CX} cy={CY} r={46} fill={T.bg2} />
-        <text x={CX} y={CY - 4} textAnchor="middle" fill={T.muted} fontSize="10" fontWeight="700" fontFamily="DM Sans,sans-serif">{tr("net")}</text>
-        <text x={CX} y={CY + 14} textAnchor="middle" fill={inc >= exp ? T.green : T.red} fontSize="16" fontWeight="800" fontFamily="DM Sans,sans-serif">
-          {inc >= exp ? "+" : "-"}{Math.abs(iPct - ePct)}%
+        <text x={CX} y={CY - 12} textAnchor="middle" fill={T.muted} fontSize="10" fontWeight="700" fontFamily="DM Sans,sans-serif">{tr("net")}</text>
+        <text x={CX} y={CY + 4} textAnchor="middle" fill={inc >= exp ? T.green : T.red} fontSize="13" fontWeight="800" fontFamily="DM Sans,sans-serif">
+          {inc >= exp ? "+" : "-"}{money(Math.abs(inc - exp), cfg).replace(getSym(cfg), "")}
+        </text>
+        <text x={CX} y={CY + 18} textAnchor="middle" fill={T.text} fontSize="10" fontWeight="700" fontFamily="DM Sans,sans-serif">
+          {Math.abs(iPct - ePct)}%
         </text>
       </svg>
       <div style={s.col({ flex: 1, gap: 16 })}>
@@ -481,16 +486,46 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [unlocked, setUnlocked] = useState(!cfg.passwordEnabled);
 
-  // 1. Re-lock app when sent to background
+  const lockTimer = useRef(null); // <-- ADD THIS FOR THE 3-MINUTE TIMER
+  const [txFilter, setTxFilter] = useState({ type: "all", cat: "all" });
+  const goToTxns = (filters) => { setTxFilter(prev => ({ ...prev, ...filters })); setTab("txns"); };
+
+  // 1. Advanced Background Locking Engine (3-minute timer + Biometrics)
   useEffect(() => {
-    const handleVisibility = () => {
-      if (document.visibilityState === "hidden" && cfg.passwordEnabled) {
-        setUnlocked(false);
+    const handleState = async ({ isActive }) => {
+      if (!isActive) {
+        // APP WENT TO BACKGROUND - Start 3 min timer (180,000 ms)
+        lockTimer.current = setTimeout(() => {
+          if (cfg.passwordEnabled) setUnlocked(false);
+        }, 180000);
+      } else {
+        // APP CAME TO FOREGROUND
+        if (lockTimer.current) {
+          clearTimeout(lockTimer.current);
+          lockTimer.current = null;
+        }
+
+        // If locked, try Biometrics instantly
+        if (!unlocked && cfg.passwordEnabled) {
+          try {
+            const bio = await NativeBiometric.isAvailable();
+            if (bio.isAvailable) {
+              const verified = await NativeBiometric.verifyIdentity({
+                reason: "Unlock CashFlow",
+                title: "Authentication Required"
+              });
+              if (verified) setUnlocked(true);
+            }
+          } catch (e) {
+            // Failed or cancelled, user will just use the PIN pad
+          }
+        }
       }
     };
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, [cfg.passwordEnabled]);
+
+    const sub = CapApp.addListener('appStateChange', handleState);
+    return () => sub.remove();
+  }, [cfg.passwordEnabled, unlocked]);
 
   // 2. Lock Zooming on mobile via viewport tag injection
   useEffect(() => {
@@ -609,7 +644,7 @@ export default function App() {
     }
   };
 
-  // Export CSV directly to Native Folder
+  // Export CSV directly to Native Folder (WITH DOUBLE-ENTRY SUPPORT)
   const exportReport = async (from, to, aF) => {
     const hasPerm = await ensureStoragePermission();
     if (!hasPerm) {
@@ -617,28 +652,40 @@ export default function App() {
       return;
     }
 
-    const rows = txns.filter(t => t.date >= from && t.date <= to && (aF === "all" || t.aid === aF)).sort((a, b) => a.date.localeCompare(b.date));
+    // Include transfers that belong to the filtered account
+    const rows = txns.filter(t => t.date >= from && t.date <= to && (aF === "all" || t.aid === aF || t.toAid === aF)).sort((a, b) => a.date.localeCompare(b.date));
 
-    // 1. Create CSV Header
-    let csvContent = "Date,Note,Category,Income,Expense,Balance\n";
-
-    // ... (keep the rest of your CSV loop exactly the same) ...
+    let csvContent = "Date,Note,Category,Type,In,Out,Balance\n";
+    let run = 0;
+    
+    rows.forEach(t => {
+      let isIn = 0, isOut = 0;
+      const cat = t.type === "transfer" ? "Transfer" : getCat(t.cat, cCats).l;
+      
+      if (t.type === "income") {
+         isIn = t.amt; run += t.amt;
+      } else if (t.type === "expense") {
+         isOut = t.amt; run -= t.amt;
+      } else if (t.type === "transfer") {
+         if (aF === "all") {
+            isIn = t.amt; isOut = t.amt; 
+         } else if (t.aid === aF) {
+            isOut = t.amt; run -= t.amt;
+         } else if (t.toAid === aF) {
+            isIn = t.amt; run += t.amt;
+         }
+      }
+      
+      csvContent += `"${t.date}","${(t.note || '').replace(/"/g, '""')}","${cat}","${t.type}",${isIn || 0},${isOut || 0},${run}\n`;
+    });
 
     try {
       const fileName = `CF-Report-${Date.now()}.csv`;
       const fullPath = `CashFlowPro/Statements/${fileName}`;
 
-      try {
-        await Filesystem.mkdir({ path: 'CashFlowPro/Statements', directory: Directory.Documents, recursive: true });
-      } catch (e) { }
+      try { await Filesystem.mkdir({ path: 'CashFlowPro/Statements', directory: Directory.Documents, recursive: true }); } catch (e) { }
 
-      await Filesystem.writeFile({
-        path: fullPath,
-        data: csvContent,
-        directory: Directory.Documents,
-        encoding: Encoding.UTF8
-      });
-
+      await Filesystem.writeFile({ path: fullPath, data: csvContent, directory: Directory.Documents, encoding: Encoding.UTF8 });
       showToast(`✅ CSV Exported to Documents/${fullPath}`);
       closeModal();
     } catch (err) {
@@ -715,8 +762,8 @@ export default function App() {
 
       <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "0 16px", paddingBottom: 110 }}>
         {tab === "home" && <HomeTab txns={txns} accs={accsB} cfg={cfg} cCats={cCats} T={T} openModal={openModal} onEdit={t => openModal("editTx", { tx: t })} onDel={id => openModal("delTx", { id })} tr={tr} />}
-        {tab === "stats" && <StatsTab txns={txns} cfg={cfg} cCats={cCats} T={T} accs={accsB} tr={tr} />}
-        {tab === "txns" && <TxnsTab txns={txns} cfg={cfg} cCats={cCats} T={T} accs={accs} onEdit={t => openModal("editTx", { tx: t })} onDel={id => openModal("delTx", { id })} openModal={openModal} tr={tr} />}
+        {tab === "stats" && <StatsTab txns={txns} cfg={cfg} cCats={cCats} T={T} accs={accsB} tr={tr} goToTxns={goToTxns} />}
+        {tab === "txns" && <TxnsTab txns={txns} cfg={cfg} cCats={cCats} T={T} accs={accs} onEdit={t => openModal("editTx", { tx: t })} onDel={id => openModal("delTx", { id })} openModal={openModal} tr={tr} txFilter={txFilter} setTxFilter={setTxFilter} />}
         {tab === "accounts" && <AccountsTab accs={accsB} cfg={cfg} T={T} onAdd={() => openModal("addAcc")} onEdit={a => openModal("editAcc", { acc: a })} onDel={id => openModal("delAcc", { id })} tr={tr} />}
         {tab === "settings" && <SettingsTab cfg={cfg} setSetting={setSetting} T={T} localBackup={localBackup} driveBackup={driveBackup} driveRestore={driveRestore} openModal={openModal} gUser={gUser} gLogin={() => gLogin().then(t => t && showToast("✅ Signed in"))} gSignOut={gSignOut} cCats={cCats} onAddCat={() => openModal("addCat")} onDelCat={delCat} G_ID={G_ID} tr={tr} />}
       </div>
@@ -819,7 +866,7 @@ function HomeTab({ txns, accs, cfg, cCats, T, openModal, tr }) {
 }
 
 // ─── STATS ────────────────────────────────────────────────────────────────────
-function StatsTab({ txns, cfg, cCats, T, accs, tr }) {
+function StatsTab({ txns, cfg, cCats, T, accs, tr, goToTxns }) {
   const now = new Date();
   const [sM, setSM] = useState(now.getMonth());
   const [sY, setSY] = useState(now.getFullYear());
@@ -831,19 +878,18 @@ function StatsTab({ txns, cfg, cCats, T, accs, tr }) {
       arr.push({ month: d.getMonth(), year: d.getFullYear(), label: tr("m" + (d.getMonth() + 1)), key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` });
     }
     return arr;
-  }, [cfg.language]); // Fixed: Depends strictly on language setting now
+  }, [cfg.language]);
 
   const key = `${sY}-${String(sM + 1).padStart(2, "0")}`;
   const mt = txns.filter(t => t.date.startsWith(key));
   const mInc = mt.filter(t => t.type === "income").reduce((s, t) => s + t.amt, 0);
   const mExp = mt.filter(t => t.type === "expense").reduce((s, t) => s + t.amt, 0);
 
-  // 2. ADD THIS NEW MATH BLOCK HERE:
   const mTr = mt.filter(t => t.type === "transfer").reduce((s, t) => s + t.amt, 0);
   const flow = {};
   mt.filter(t => t.type === "transfer").forEach(t => {
-    flow[t.aid] = (flow[t.aid] || 0) - t.amt;     // Money left this account
-    flow[t.toAid] = (flow[t.toAid] || 0) + t.amt; // Money entered this account
+    flow[t.aid] = (flow[t.aid] || 0) - t.amt;
+    flow[t.toAid] = (flow[t.toAid] || 0) + t.amt;
   });
   const flowArr = Object.entries(flow).filter(([_, v]) => v !== 0).sort((a, b) => b[1] - a[1]);
 
@@ -915,21 +961,21 @@ function StatsTab({ txns, cfg, cCats, T, accs, tr }) {
             <span style={{ fontSize: 14, fontWeight: 900, color: T.accent }}>{money(mTr, cfg)}</span>
           </div>
           <div style={{ fontSize: 11, color: T.muted, marginBottom: 16 }}>Net flow between your buckets this month</div>
-          
+
           {flowArr.map(([id, amt], i) => {
-             const acc = accs?.find(a => a.id === id) || { name: "Deleted Account", icon: "🏦" };
-             const isPos = amt > 0;
-             return (
-               <div key={id} style={s.row({ justifyContent: "space-between", padding: "10px 0", borderBottom: i < flowArr.length - 1 ? `1px solid ${T.sep}` : "none" })}>
-                 <div style={s.row({ gap: 10 })}>
-                   <span style={{ fontSize: 18 }}>{acc.icon}</span>
-                   <span style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{acc.name}</span>
-                 </div>
-                 <span style={{ fontSize: 13, fontWeight: 800, color: isPos ? T.accent : T.sub }}>
-                   {isPos ? "+" : ""}{money(amt, cfg)}
-                 </span>
-               </div>
-             );
+            const acc = accs?.find(a => a.id === id) || { name: "Deleted Account", icon: "🏦" };
+            const isPos = amt > 0;
+            return (
+              <div key={id} style={s.row({ justifyContent: "space-between", padding: "10px 0", borderBottom: i < flowArr.length - 1 ? `1px solid ${T.sep}` : "none" })}>
+                <div style={s.row({ gap: 10 })}>
+                  <span style={{ fontSize: 18 }}>{acc.icon}</span>
+                  <span style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{acc.name}</span>
+                </div>
+                <span style={{ fontSize: 13, fontWeight: 800, color: isPos ? T.accent : T.sub }}>
+                  {isPos ? "+" : ""}{money(amt, cfg)}
+                </span>
+              </div>
+            );
           })}
         </div>
       )}
@@ -940,7 +986,10 @@ function StatsTab({ txns, cfg, cCats, T, accs, tr }) {
           {top.map(([id, amt]) => {
             const c = getCat(id, cCats), pct = mExp > 0 ? (amt / mExp) * 100 : 0;
             return (
-              <div key={id} style={{ marginBottom: 14 }}>
+              <div key={id} onClick={() => goToTxns({ type: "expense", cat: id })} 
+                style={{ marginBottom: 14, cursor: "pointer", padding: "4px", borderRadius: 8, transition: "background .2s" }}
+                onMouseOver={e => e.currentTarget.style.background = T.bg3}
+                onMouseOut={e => e.currentTarget.style.background = "transparent"}>
                 <div style={s.row({ justifyContent: "space-between", marginBottom: 6 })}>
                   <div style={s.row({ gap: 10 })}>
                     <span style={{ fontSize: 18 }}>{c.i}</span>
@@ -961,10 +1010,9 @@ function StatsTab({ txns, cfg, cCats, T, accs, tr }) {
 }
 
 // ─── TRANSACTIONS ─────────────────────────────────────────────────────────────
-function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr }) {
+function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr, txFilter, setTxFilter }) {
   const [limit, setLimit] = useState(50);
   const [p, setP] = useState("all");
-  const [typeF, setTypeF] = useState("all");
   const [query, setQuery] = useState("");
   const [accF, setAccF] = useState("all");
   const [showS, setShowS] = useState(false);
@@ -975,9 +1023,9 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr }) {
 
   useEffect(() => { if (showS && srRef.current) srRef.current.focus(); }, [showS]);
 
-  const list = useMemo(() => {
+  // Base list for the current period/search (ignores type/cat filters so totals are always accurate)
+  const periodList = useMemo(() => {
     let r = byPeriod(txns, p);
-    if (typeF !== "all") r = r.filter(t => t.type === typeF);
     if (accF !== "all") r = r.filter(t => t.aid === accF);
     if (fromD) r = r.filter(t => t.date >= fromD);
     if (toD) r = r.filter(t => t.date <= toD);
@@ -986,11 +1034,18 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr }) {
       r = r.filter(t => t.note.toLowerCase().includes(q) || getCat(t.cat, cCats).l.toLowerCase().includes(q) || t.date.includes(q) || String(t.amt).includes(q));
     }
     return [...r].sort((a, b) => b.date.localeCompare(a.date));
-  }, [txns, p, typeF, query, accF, fromD, toD, cCats]);
+  }, [txns, p, query, accF, fromD, toD, cCats]);
 
-  const sIn = list.filter(t => t.type === "income").reduce((s, t) => s + t.amt, 0);
-  const sOut = list.filter(t => t.type === "expense").reduce((s, t) => s + t.amt, 0);
-  /*useEffect(() => { setLimit(50); }, [p, typeF, query, accF, fromD, toD]);*/
+  // Totals for the big interactive boxes
+  const sIn = periodList.filter(t => t.type === "income").reduce((s, t) => s + t.amt, 0);
+  const sOut = periodList.filter(t => t.type === "expense").reduce((s, t) => s + t.amt, 0);
+  const sTr = periodList.filter(t => t.type === "transfer").reduce((s, t) => s + t.amt, 0);
+
+  // The actual list rendered on screen (applies the global type/cat filters)
+  const list = periodList.filter(t => 
+    (txFilter.type === "all" || t.type === txFilter.type) && 
+    (txFilter.cat === "all" || t.cat === txFilter.cat)
+  );
 
   return (
     <div className="tab-content" style={{ paddingBottom: 20 }}>
@@ -1027,27 +1082,29 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr }) {
 
       <PBar p={p} set={setP} T={T} tr={tr} />
 
-      <div style={s.row({ gap: 8, marginBottom: 16 })}>
-        {[["all", tr("all"), ""], ["income", tr("income"), T.green], ["expense", tr("expense"), T.red], ["transfer", "Transfer", T.sub]].map(([v, l, c]) => (
-          <button key={v} onClick={() => setTypeF(v)}
-            style={{
-              flex: 1, padding: "10px 6px", borderRadius: 14, fontSize: 13, fontWeight: typeF === v ? 800 : 600,
-              background: typeF === v ? (c || T.accent) + "18" : T.bg2, color: typeF === v ? (c || T.accent) : T.sub,
-              border: `1.5px solid ${typeF === v ? (c || T.accent) + "60" : "transparent"}`
-            }}>
-            {v === "income" ? "💚 " : v === "expense" ? "💸 " : ""}{l}
+      {/* NEW CLEAR CATEGORY BADGE */}
+      {txFilter.cat !== "all" && (
+        <div style={s.row({ gap: 8, marginBottom: 12 })}>
+          <span style={{ fontSize: 13, color: T.muted }}>Filtered by:</span>
+          <button onClick={() => setTxFilter(f => ({ ...f, cat: "all" }))} style={{ padding: "4px 10px", borderRadius: 12, background: T.accent+"22", color: T.accent, fontSize: 12, fontWeight: 700 }}>
+            {getCat(txFilter.cat, cCats).l} ✕
           </button>
-        ))}
-      </div>
+        </div>
+      )}
 
-      {list.length > 0 && (
+      {/* NEW INTERACTIVE SUMMARY BOXES ACTING AS FILTERS */}
+      {periodList.length > 0 && (
         <div style={s.row({ gap: 10, marginBottom: 16 })}>
-          {[["In", sIn, T.green], ["Out", sOut, T.red], ["Net", sIn - sOut, sIn - sOut >= 0 ? T.green : T.red]].map(([l, v, c]) => (
-            <div key={l} style={s.col({ flex: 1, background: c + "12", borderRadius: 14, padding: "12px 14px" })}>
-              <span style={{ fontSize: 11, color: c, fontWeight: 800 }}>{tr(l.toLowerCase())}</span>
-              <span style={{ fontSize: 15, fontWeight: 900, color: c, marginTop: 4 }}>{money(Math.abs(v), cfg)}</span>
-            </div>
-          ))}
+          {[["In", sIn, T.green, "income"], ["Out", sOut, T.red, "expense"], ["Transfer", sTr, T.accent, "transfer"]].map(([l, v, c, typ]) => {
+            const active = txFilter.type === typ;
+            return (
+              <div key={l} onClick={() => setTxFilter(f => ({ ...f, type: f.type === typ ? "all" : typ }))}
+                style={s.col({ flex: 1, background: active ? c + "25" : c + "12", borderRadius: 14, padding: "12px 14px", border: `1.5px solid ${active ? c + "80" : "transparent"}`, cursor: "pointer", transition: "all .2s" })}>
+                <span style={{ fontSize: 11, color: c, fontWeight: 800 }}>{tr(l.toLowerCase()) || l}</span>
+                <span style={{ fontSize: 15, fontWeight: 900, color: c, marginTop: 4 }}>{money(Math.abs(v), cfg)}</span>
+              </div>
+            );
+          })}
           <span style={{ alignSelf: "center", fontSize: 12, fontWeight: 700, color: T.muted, flexShrink: 0, padding: "0 4px" }}>{list.length}</span>
         </div>
       )}
@@ -1266,29 +1323,77 @@ function SettingsTab({ cfg, setSetting, T, localBackup, driveBackup, driveRestor
 // ─── MODALS ───────────────────────────────────────────────────────────────────
 function TxModal({ T, accs, allCats, cfg, onSubmit, onClose, editTx, tr }) {
   const [type, setType] = useState(editTx?.type || "expense");
-  const [form, setForm] = useState({
-    aid: editTx?.aid || accs[0]?.id || "",
-    toAid: editTx?.toAid || (accs.length > 1 ? accs[1].id : ""), // Destination Account
-    cat: editTx?.cat || "",
-    amt: editTx?.amt?.toString() || "",
-    note: editTx?.note || "",
-    date: editTx?.date || today(),
-    time: editTx?.time || nowT(),
+
+  // REPLACED FORM STATE TO SUPPORT DRAFTS
+  const [form, setForm] = useState(() => {
+    // 1. If editing an existing transaction, use its data
+    if (editTx) {
+      return {
+        aid: editTx.aid || accs[0]?.id || "",
+        toAid: editTx.toAid || (accs.length > 1 ? accs[1].id : ""),
+        cat: editTx.cat || "",
+        amt: editTx.amt?.toString() || "",
+        note: editTx.note || "",
+        date: editTx.date || today(),
+        time: editTx.time || nowT(),
+      };
+    }
+
+    // 2. Try to load draft from localStorage
+    const draft = localStorage.getItem("cf_draft");
+    if (draft) return JSON.parse(draft);
+
+    // 3. Otherwise, clean slate
+    return {
+      aid: accs[0]?.id || "",
+      toAid: accs.length > 1 ? accs[1].id : "",
+      cat: "",
+      amt: "",
+      note: "",
+      date: today(),
+      time: nowT(),
+    };
   });
+
+  // AUTO-SAVE DRAFT ON CHANGE
+  useEffect(() => {
+    if (!editTx) {
+      localStorage.setItem("cf_draft", JSON.stringify(form));
+    }
+  }, [form, editTx]);
+
   const [err, setErr] = useState("");
   const cats = allCats[type] || [];
   const ac = type === "income" ? T.green : type === "expense" ? T.red : T.accent;
   const sy = getSym(cfg);
 
+  // 1. ADD THIS HELPER INSIDE TxModal:
+  const evalMath = () => {
+    try {
+      const sanitized = form.amt.toString().replace(/[^0-9+\-*/.]/g, '');
+      if (!sanitized) return form.amt;
+      const res = new Function('return ' + sanitized)();
+      const final = parseFloat(res).toFixed(2).replace(/\.00$/, '');
+      setForm(f => ({ ...f, amt: final }));
+      return final;
+    } catch (e) {
+      return form.amt;
+    }
+  };
+
+  // REPLACED SUBMIT FUNCTION TO CLEAR DRAFT
   const submit = () => {
-    if (!form.amt || isNaN(+form.amt) || +form.amt <= 0) { setErr("Enter a valid amount"); return; }
+    const finalAmt = evalMath(); // Evaluate math first
+    if (!finalAmt || isNaN(+finalAmt) || +finalAmt <= 0) { setErr("Enter a valid amount"); return; }
     if (type !== "transfer" && !form.cat) { setErr("Select a category"); return; }
     if (!form.aid) { setErr("Select an account"); return; }
     if (type === "transfer") {
       if (!form.toAid) { setErr("Select a destination account"); return; }
       if (form.aid === form.toAid) { setErr("Source and destination must be different"); return; }
     }
-    onSubmit({ ...(editTx || {}), ...form, amt: parseFloat(form.amt), type });
+
+    localStorage.removeItem("cf_draft");
+    onSubmit({ ...(editTx || {}), ...form, amt: parseFloat(finalAmt), type });
   };
 
   return (
@@ -1312,10 +1417,14 @@ function TxModal({ T, accs, allCats, cfg, onSubmit, onClose, editTx, tr }) {
         </div>
         <div style={s.row({ gap: 6, alignItems: "center" })}>
           <span style={{ fontSize: 28, color: ac, opacity: .6, fontWeight: 800 }}>{sy}</span>
-          <input type="number" inputMode="decimal" value={form.amt}
+          <input type="text" inputMode="decimal" value={form.amt}
             onChange={e => { setForm(f => ({ ...f, amt: e.target.value })); setErr(""); }}
+            onBlur={evalMath}
             placeholder="0.00"
             style={{ flex: 1, background: "none", fontSize: 44, fontWeight: 900, color: ac, minWidth: 0, letterSpacing: "-1px" }} />
+          <button onClick={evalMath} style={{ width: 44, height: 44, borderRadius: 12, background: ac + "22", color: ac, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            {CalcIco(ac)}
+          </button>
         </div>
       </div>
 
@@ -1364,7 +1473,6 @@ function TxModal({ T, accs, allCats, cfg, onSubmit, onClose, editTx, tr }) {
       ) : (
         <>
           <Lbl T={T}>{tr("category")}</Lbl>
-          {/* ... Categories mapping remains exactly the same below here ... */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 20 }}>
             {cats.map(c => (
               <button key={c.id} onClick={() => { setForm(f => ({ ...f, cat: c.id })); setErr(""); }}
@@ -1566,11 +1674,26 @@ function ReportModal({ T, txns, accs, cCats, cfg, onClose, onExport, tr }) {
     { l: "This Fin. Year", f: fyStart, t: td },
     { l: "All Time", f: "2000-01-01", t: td },
   ];
-  const rows = txns.filter(t => t.date >= from && t.date <= to && (aF === "all" || t.aid === aF)).sort((a, b) => a.date.localeCompare(b.date));
-  const inc = rows.filter(t => t.type === "income").reduce((s, t) => s + t.amt, 0);
-  const exp = rows.filter(t => t.type === "expense").reduce((s, t) => s + t.amt, 0);
+  
+  const rows = txns.filter(t => t.date >= from && t.date <= to && (aF === "all" || t.aid === aF || t.toAid === aF)).sort((a, b) => a.date.localeCompare(b.date));
+  
+  // Math adjusted for Double-Entry
+  const inc = rows.filter(t => t.type === "income" || (t.type === "transfer" && aF !== "all" && t.toAid === aF)).reduce((s, t) => s + t.amt, 0);
+  const exp = rows.filter(t => t.type === "expense" || (t.type === "transfer" && aF !== "all" && t.aid === aF)).reduce((s, t) => s + t.amt, 0);
   const sy = getSym(cfg);
-  let run = 0; const rb = rows.map(t => { run += t.type === "income" ? t.amt : -t.amt; return { ...t, bal: run }; });
+  
+  let run = 0; 
+  const rb = rows.map(t => { 
+     let isIn = false, isOut = false;
+     if (t.type === "income") { run += t.amt; isIn = true; }
+     else if (t.type === "expense") { run -= t.amt; isOut = true; }
+     else if (t.type === "transfer") {
+         if (aF === "all") { isIn = true; isOut = true; }
+         else if (t.aid === aF) { run -= t.amt; isOut = true; }
+         else if (t.toAid === aF) { run += t.amt; isIn = true; }
+     }
+     return { ...t, bal: run, isIn, isOut }; 
+  });
 
   if (prev) return (
     <Sheet T={T} onClose={onClose} title={tr("reportPreview") || "Report Preview"}>
@@ -1605,14 +1728,14 @@ function ReportModal({ T, txns, accs, cCats, cfg, onClose, onExport, tr }) {
           </thead>
           <tbody>
             {rb.slice(0, 16).map((t, i) => {
-              const c = getCat(t.cat, cCats);
+              const c = t.type === "transfer" ? { i: "🔄", l: "Transfer" } : getCat(t.cat, cCats);
               return (
                 <tr key={t.id} style={{ borderBottom: i !== 15 && i !== rb.length - 1 ? `1px solid ${T.sep}` : "none" }}>
                   <td style={{ padding: "10px 8px", color: T.muted, fontSize: 11, whiteSpace: "nowrap" }}>{t.date}</td>
-                  <td style={{ padding: "10px 8px", color: T.text, fontWeight: 600, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.note}</td>
+                  <td style={{ padding: "10px 8px", color: T.text, fontWeight: 600, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.note || (t.type === "transfer" ? "Internal Adjust" : "")}</td>
                   <td style={{ padding: "10px 8px", whiteSpace: "nowrap", color: T.text }}>{c.i} {c.l}</td>
-                  <td style={{ padding: "10px 8px", color: T.green, fontWeight: 800, whiteSpace: "nowrap" }}>{t.type === "income" ? `${sy}${t.amt.toFixed(2)}` : ""}</td>
-                  <td style={{ padding: "10px 8px", color: T.red, fontWeight: 800, whiteSpace: "nowrap" }}>{t.type === "expense" ? `${sy}${t.amt.toFixed(2)}` : ""}</td>
+                  <td style={{ padding: "10px 8px", color: T.green, fontWeight: 800, whiteSpace: "nowrap" }}>{t.isIn ? `+${sy}${t.amt.toFixed(2)}` : ""}</td>
+                  <td style={{ padding: "10px 8px", color: T.red, fontWeight: 800, whiteSpace: "nowrap" }}>{t.isOut ? `-${sy}${t.amt.toFixed(2)}` : ""}</td>
                   <td style={{ padding: "10px 8px", fontWeight: 800, color: T.text, whiteSpace: "nowrap" }}>{sy}{Math.abs(t.bal).toFixed(0)}</td>
                 </tr>
               );
