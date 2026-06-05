@@ -241,30 +241,26 @@ function PieChart({ inc, exp, T, cfg, tr }) {
   };
   const iAng = (inc / total) * 360, iPct = Math.round((inc / total) * 100), ePct = 100 - iPct;
   return (
-    <div style={s.row({ gap: 20, alignItems: "center" })}>
-      <svg width={150} height={150} viewBox="0 0 150 150" style={{ flexShrink: 0 }}>
+    <div style={s.row({ gap: 16, alignItems: "center", justifyContent: "center" })}>
+      <svg width={130} height={130} viewBox="0 0 150 150" style={{ flexShrink: 0 }}>
         {exp > 0 && <path d={arc(iAng >= 360 ? 0 : iAng, 360)} fill={T.red} opacity=".9" />}
         {inc > 0 && iAng > 0 && <path d={arc(0, Math.min(iAng, 359.9))} fill={T.green} opacity=".9" />}
         <circle cx={CX} cy={CY} r={46} fill={T.bg2} />
-        <text x={CX} y={CY - 12} textAnchor="middle" fill={T.muted} fontSize="10" fontWeight="700" fontFamily="DM Sans,sans-serif">{tr("net")}</text>
-        <text x={CX} y={CY + 4} textAnchor="middle" fill={inc >= exp ? T.green : T.red} fontSize="13" fontWeight="800" fontFamily="DM Sans,sans-serif">
-          {inc >= exp ? "+" : "-"}{money(Math.abs(inc - exp), cfg).replace(getSym(cfg), "")}
-        </text>
-        <text x={CX} y={CY + 18} textAnchor="middle" fill={T.text} fontSize="10" fontWeight="700" fontFamily="DM Sans,sans-serif">
+        <text x={CX} y={CY + 8} textAnchor="middle" fill={T.text} fontSize="22" fontWeight="900" fontFamily="DM Sans,sans-serif">
           {Math.abs(iPct - ePct)}%
         </text>
       </svg>
-      <div style={s.col({ flex: 1, gap: 16 })}>
-        {[[T.green, tr("income"), inc, iPct], [T.red, tr("expense"), exp, ePct]].map(([c, l, v, pct]) => (
+      <div style={s.col({ flex: 1, gap: 12 })}>
+        {[[T.green, tr("income"), inc, iPct + "%"], [T.red, tr("expense"), exp, ePct + "%"], [inc >= exp ? T.green : T.red, tr("net"), Math.abs(inc - exp), ""]].map(([c, l, v, pct]) => (
           <div key={l}>
-            <div style={s.row({ justifyContent: "space-between", marginBottom: 4 })}>
+            <div style={s.row({ justifyContent: "space-between", marginBottom: 2 })}>
               <div style={s.row({ gap: 8 })}>
-                <div style={{ width: 12, height: 12, borderRadius: 3, background: c }} />
-                <span style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{l}</span>
+                <div style={{ width: 10, height: 10, borderRadius: 3, background: c }} />
+                <span style={{ fontSize: 12, color: T.muted, fontWeight: 700, textTransform: "uppercase" }}>{l}</span>
               </div>
-              <span style={{ fontSize: 12, fontWeight: 800, color: c }}>{pct}%</span>
+              <span style={{ fontSize: 12, fontWeight: 800, color: c }}>{pct}</span>
             </div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>{money(v, cfg)}</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.text, paddingLeft: 18 }}>{money(v, cfg)}</div>
           </div>
         ))}
       </div>
@@ -505,8 +501,8 @@ export default function App() {
           lockTimer.current = null;
         }
 
-        // If locked, try Biometrics instantly
-        if (!unlocked && cfg.passwordEnabled) {
+        // If locked AND biometrics are enabled, try Biometrics instantly
+        if (!unlocked && cfg.passwordEnabled && cfg.useBiometrics) {
           try {
             const bio = await NativeBiometric.isAvailable();
             if (bio.isAvailable) {
@@ -1061,7 +1057,9 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr, txFi
       {showS && (
         <div style={{ position: "relative", marginBottom: 16 }}>
           <div style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>{SearchIco(T.muted)}</div>
-          <input ref={srRef} value={query} onChange={e => setQuery(e.target.value)} placeholder={tr("search")}
+          <input ref={srRef} value={query} onChange={e => setQuery(e.target.value)} 
+            onKeyDown={e => { if (e.key === 'Enter') { e.target.blur(); setShowS(false); } }}
+            placeholder={tr("search")}
             style={{ background: T.bg2, borderRadius: 14, color: T.text, fontSize: 14, padding: "12px 36px 12px 40px", width: "100%", boxSizing: "border-box" }} />
           {query && <button onClick={() => setQuery("")} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", color: T.muted, fontSize: 18 }}>✕</button>}
         </div>
@@ -1081,6 +1079,16 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr, txFi
       )}
 
       <PBar p={p} set={setP} T={T} tr={tr} />
+
+      {/* NEW SEARCH QUERY BADGE */}
+      {query.trim() !== "" && !showS && (
+        <div style={s.row({ gap: 8, marginBottom: 12 })}>
+          <span style={{ fontSize: 13, color: T.muted }}>Searched:</span>
+          <button onClick={() => setQuery("")} style={{ padding: "4px 10px", borderRadius: 12, background: T.accent+"22", color: T.accent, fontSize: 12, fontWeight: 700 }}>
+            "{query}" ✕
+          </button>
+        </div>
+      )}
 
       {/* NEW CLEAR CATEGORY BADGE */}
       {txFilter.cat !== "all" && (
@@ -1233,6 +1241,16 @@ function SettingsTab({ cfg, setSetting, T, localBackup, driveBackup, driveRestor
             {cfg.passwordEnabled ? "Change" : "Enable"}
           </button>
         </div>
+
+        {cfg.passwordEnabled && (
+          <div style={s.row({ justifyContent: "space-between", marginTop: 16, paddingTop: 16, borderTop: `1px solid ${T.sep}` })}>
+            <div>
+              <div style={{ fontSize: 15, color: T.text, fontWeight: 700 }}>FaceID / Fingerprint</div>
+              <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>Unlock with biometrics</div>
+            </div>
+            <Toggle value={cfg.useBiometrics || false} onChange={v => setSetting("useBiometrics", v)} T={T} />
+          </div>
+        )}
       </div>
 
       <SHd T={T}>{tr("cloudSync")}</SHd>
@@ -1368,15 +1386,23 @@ function TxModal({ T, accs, allCats, cfg, onSubmit, onClose, editTx, tr }) {
   const sy = getSym(cfg);
 
   // 1. ADD THIS HELPER INSIDE TxModal:
-  const evalMath = () => {
+  const evalMath = (e) => {
+    if (e) e.preventDefault();
     try {
-      const sanitized = form.amt.toString().replace(/[^0-9+\-*/.]/g, '');
-      if (!sanitized) return form.amt;
+      // Clean letters and strip trailing operators (like '500+') so math doesn't crash
+      let sanitized = form.amt.toString().replace(/[^0-9+\-*/.]/g, '');
+      sanitized = sanitized.replace(/[+\-*/.]+$/, ''); 
+      if (!sanitized || sanitized === form.amt.toString()) return form.amt;
+      
       const res = new Function('return ' + sanitized)();
       const final = parseFloat(res).toFixed(2).replace(/\.00$/, '');
-      setForm(f => ({ ...f, amt: final }));
-      return final;
-    } catch (e) {
+      
+      if (final !== "NaN" && final !== "Infinity") {
+         setForm(f => ({ ...f, amt: final }));
+         return final;
+      }
+      return form.amt;
+    } catch (err) {
       return form.amt;
     }
   };
