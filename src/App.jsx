@@ -461,21 +461,26 @@ function Sel({ T, children, style, ...props }) {
 function LockScreen({ T, cfg, onUnlock, tr }) {
   const [pin, setPin] = useState("");
   const [err, setErr] = useState(false);
+  const [bioMsg, setBioMsg] = useState(""); // Stores the biometric warning
 
   const handleBio = async () => {
     try {
       const bio = await NativeBiometric.isAvailable();
       if (bio.isAvailable) {
-        // Wait for the native prompt to succeed. If it fails, it throws an error to the catch block.
         await NativeBiometric.verifyIdentity({
           reason: "Unlock CashFlow",
           title: "Authentication Required"
         });
-        // If we reach this line, the fingerprint was SUCCESSFUL!
         onUnlock(); 
       }
     } catch (e) {
-      // Failed or cancelled - user is left safely on the PIN pad.
+      // ⚠️ FINGERPRINT FAILED OR CANCELLED
+      try { await Haptics.vibrate(); } catch (err) {}
+      setBioMsg("⚠️ Fingerprint failed. Please use PIN.");
+      
+      // Trigger the red shake animation
+      setErr(true);
+      setTimeout(() => setErr(false), 500);
     }
   };
 
@@ -485,10 +490,12 @@ function LockScreen({ T, cfg, onUnlock, tr }) {
 
   const handlePress = async (n) => {
     if (err) return;
-    try { await Haptics.impact({ style: 'light' }); } catch (e) {} // Haptic feedback on tap
+    try { await Haptics.impact({ style: 'light' }); } catch (e) {} 
     
+    setBioMsg(""); // Clear warning as soon as user starts typing
     const next = pin + n;
     setPin(next);
+    
     if (next.length === cfg.password.length) {
       if (next === cfg.password) setTimeout(onUnlock, 150);
       else {
@@ -498,14 +505,33 @@ function LockScreen({ T, cfg, onUnlock, tr }) {
       }
     }
   };
-  const handleDel = () => setPin(p => p.slice(0, -1));
+  const handleDel = () => { setPin(p => p.slice(0, -1)); setBioMsg(""); };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: T.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
-      <div style={{ marginBottom: 32 }}><AppLogo size={72} /></div>
-      <div style={{ fontSize: 20, fontWeight: 800, color: T.text, marginBottom: 24 }}>{tr("appPwd") || "App Password"}</div>
+      
+      {/* INJECTED PREMIUM SHAKE ANIMATION */}
+      <style>{`
+        @keyframes premiumShake {
+          0%, 100% { transform: translateX(0); }
+          20% { transform: translateX(-10px); }
+          40% { transform: translateX(10px); }
+          60% { transform: translateX(-10px); }
+          80% { transform: translateX(10px); }
+        }
+        .shake-error { animation: premiumShake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
+      `}</style>
 
-      <div className={err ? "shake-anim" : ""} style={s.row({ gap: 14, marginBottom: 48, height: 20 })}>
+      <div style={{ marginBottom: 32 }}><AppLogo size={72} /></div>
+      <div style={{ fontSize: 20, fontWeight: 800, color: T.text, marginBottom: 8 }}>{tr("appPwd") || "App Password"}</div>
+      
+      {/* BIOMETRIC WARNING MESSAGE */}
+      <div style={{ height: 20, fontSize: 13, color: T.red, fontWeight: 800, marginBottom: 16, opacity: bioMsg ? 1 : 0, transition: "opacity .2s", display: "flex", alignItems: "center" }}>
+        {bioMsg}
+      </div>
+
+      {/* PIN DOTS WITH SHAKE CLASS */}
+      <div className={err ? "shake-error" : ""} style={s.row({ gap: 14, marginBottom: 48, height: 20 })}>
         {Array.from({ length: cfg.password.length }).map((_, i) => (
           <div key={i} style={{ width: 16, height: 16, borderRadius: "50%", background: err ? T.red : (i < pin.length ? T.accent : T.bg3), transition: "background .2s ease" }} />
         ))}
@@ -516,21 +542,18 @@ function LockScreen({ T, cfg, onUnlock, tr }) {
           <button key={n} className="pin-btn" onClick={() => handlePress(n.toString())} style={{ height: 70, borderRadius: 35, background: T.bg2, fontSize: 26, fontWeight: 600, color: T.text, boxShadow: `0 4px 12px ${T.sep}` }}>{n}</button>
         ))}
         
+        {/* RETRY FINGERPRINT BUTTON */}
         {cfg.useBiometrics ? (
           <button className="pin-btn" onClick={handleBio} style={{ height: 70, borderRadius: 35, background: "transparent", fontSize: 28, color: T.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/><path d="M14 13.12c0 2.38 0 6.38-1 8.88"/><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"/><path d="M2 12a10 10 0 0 1 18-6"/><path d="M2 16h.01"/><path d="M21.8 16c.2-2 .131-5.354 0-6"/><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2"/><path d="M8.65 22c.21-.66.45-1.32.57-2"/><path d="M9 6.8a6 6 0 0 1 9 5.2v2"/>
-            </svg>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/><path d="M14 13.12c0 2.38 0 6.38-1 8.88"/><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"/><path d="M2 12a10 10 0 0 1 18-6"/><path d="M2 16h.01"/><path d="M21.8 16c.2-2 .131-5.354 0-6"/><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2"/><path d="M8.65 22c.21-.66.45-1.32.57-2"/><path d="M9 6.8a6 6 0 0 1 9 5.2v2"/></svg>
           </button>
         ) : <div />}
-
         <button className="pin-btn" onClick={() => handlePress("0")} style={{ height: 70, borderRadius: 35, background: T.bg2, fontSize: 26, fontWeight: 600, color: T.text, boxShadow: `0 4px 12px ${T.sep}` }}>0</button>
         <button className="pin-btn" onClick={handleDel} style={{ height: 70, borderRadius: 35, background: "transparent", fontSize: 26, color: T.muted }}>⌫</button>
       </div>
     </div>
   );
 }
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // APP
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -549,6 +572,9 @@ export default function App() {
   const lockTimer = useRef(null); 
   const [txFilter, setTxFilter] = useState({ type: "all", cat: "all" });
   const goToTxns = (filters) => { setTxFilter(prev => ({ ...prev, ...filters })); setTab("txns"); };
+
+  const [editTx, setEditTx] = useState(null);
+  const [viewTx, setViewTx] = useState(null); // NEW: View Details State
 
   // 1. Advanced Background Locking Engine (3-minute timer)
   useEffect(() => {
@@ -694,51 +720,42 @@ export default function App() {
   // Export CSV directly to Native Folder (WITH DOUBLE-ENTRY SUPPORT)
   const exportReport = async (from, to, aF) => {
     const hasPerm = await ensureStoragePermission();
-    if (!hasPerm) {
-      showToast("Can't Export: Permission not granted", T.red);
-      return;
-    }
+    if (!hasPerm) { showToast("Permission not granted", T.red); return; }
 
-    // Include transfers that belong to the filtered account
     const rows = txns.filter(t => t.date >= from && t.date <= to && (aF === "all" || t.aid === aF || t.toAid === aF)).sort((a, b) => a.date.localeCompare(b.date));
 
-    let csvContent = "Date,Note,Category,Type,In,Out,Balance\n";
+    // ADDED ACCOUNT COLUMN
+    let csvContent = "Date,Note,Category,Type,Account,In,Out,Balance\n";
     let run = 0;
     
     rows.forEach(t => {
       let isIn = 0, isOut = 0;
       const cat = t.type === "transfer" ? "Transfer" : getCat(t.cat, cCats).l;
       
-      if (t.type === "income") {
-         isIn = t.amt; run += t.amt;
-      } else if (t.type === "expense") {
-         isOut = t.amt; run -= t.amt;
-      } else if (t.type === "transfer") {
-         if (aF === "all") {
-            isIn = t.amt; isOut = t.amt; 
-         } else if (t.aid === aF) {
-            isOut = t.amt; run -= t.amt;
-         } else if (t.toAid === aF) {
-            isIn = t.amt; run += t.amt;
-         }
+      // GET ACCOUNT NAMES
+      const fromAcc = accs.find(a => a.id === t.aid)?.name || "Unknown";
+      const toAcc = t.type === "transfer" ? (accs.find(a => a.id === t.toAid)?.name || "Unknown") : "";
+      const accStr = t.type === "transfer" ? `${fromAcc} -> ${toAcc}` : fromAcc;
+      
+      if (t.type === "income") { isIn = t.amt; run += t.amt; } 
+      else if (t.type === "expense") { isOut = t.amt; run -= t.amt; } 
+      else if (t.type === "transfer") {
+         if (aF === "all") { isIn = t.amt; isOut = t.amt; } 
+         else if (t.aid === aF) { isOut = t.amt; run -= t.amt; } 
+         else if (t.toAid === aF) { isIn = t.amt; run += t.amt; }
       }
       
-      csvContent += `"${t.date}","${(t.note || '').replace(/"/g, '""')}","${cat}","${t.type}",${isIn || 0},${isOut || 0},${run}\n`;
+      csvContent += `"${t.date}","${(t.note || '').replace(/"/g, '""')}","${cat}","${t.type}","${accStr}",${isIn || 0},${isOut || 0},${run}\n`;
     });
 
     try {
       const fileName = `CF-Report-${Date.now()}.csv`;
       const fullPath = `CashFlowPro/Statements/${fileName}`;
-
       try { await Filesystem.mkdir({ path: 'CashFlowPro/Statements', directory: Directory.Documents, recursive: true }); } catch (e) { }
-
       await Filesystem.writeFile({ path: fullPath, data: csvContent, directory: Directory.Documents, encoding: Encoding.UTF8 });
       showToast(`✅ CSV Exported to Documents/${fullPath}`);
       closeModal();
-    } catch (err) {
-      showToast("Can't Export: Permission not granted", T.red);
-      console.error(err);
-    }
+    } catch (err) { showToast("Export failed", T.red); console.error(err); }
   };
 
   // Google Drive
@@ -808,9 +825,9 @@ export default function App() {
       <GlobalStyle T={T} />
 
       <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "0 16px", paddingBottom: 110 }}>
-        {tab === "home" && <HomeTab txns={txns} accs={accsB} cfg={cfg} cCats={cCats} T={T} openModal={openModal} onEdit={t => openModal("editTx", { tx: t })} onDel={id => openModal("delTx", { id })} tr={tr} />}
+        {tab === "home" && <HomeTab txns={txns} accs={accs} T={T} cfg={cfg} tr={tr} goToTxns={goToTxns} />}
         {tab === "stats" && <StatsTab txns={txns} cfg={cfg} cCats={cCats} T={T} accs={accsB} tr={tr} goToTxns={goToTxns} />}
-        {tab === "txns" && <TxnsTab txns={txns} cfg={cfg} cCats={cCats} T={T} accs={accs} onEdit={t => openModal("editTx", { tx: t })} onDel={id => openModal("delTx", { id })} openModal={openModal} tr={tr} txFilter={txFilter} setTxFilter={setTxFilter} />}
+        {tab === "txns" && <TxnsTab txns={txns} cfg={cfg} cCats={cCats} T={T} accs={accs} onEdit={setViewTx} onDel={delTx} openModal={openModal} tr={tr} txFilter={txFilter} setTxFilter={setTxFilter} />}
         {tab === "accounts" && <AccountsTab accs={accsB} cfg={cfg} T={T} onAdd={() => openModal("addAcc")} onEdit={a => openModal("editAcc", { acc: a })} onDel={id => openModal("delAcc", { id })} tr={tr} />}
         {tab === "settings" && <SettingsTab cfg={cfg} setSetting={setSetting} T={T} localBackup={localBackup} driveBackup={driveBackup} driveRestore={driveRestore} openModal={openModal} gUser={gUser} gLogin={() => gLogin().then(t => t && showToast("✅ Signed in"))} gSignOut={gSignOut} cCats={cCats} onAddCat={() => openModal("addCat")} onDelCat={delCat} G_ID={G_ID} tr={tr} />}
       </div>
@@ -832,7 +849,8 @@ export default function App() {
           </button>
         ))}
       </nav>
-
+      
+      {viewTx && <TxViewModal t={viewTx} accs={accs} cCats={cCats} T={T} cfg={cfg} onClose={() => setViewTx(null)} onEdit={setEditTx} onDel={id => { setTxns(p => p.filter(x => x.id !== id)); }} />}
       {modal?.type === "addTx" && <TxModal T={T} accs={accs} allCats={allCats} cfg={cfg} onSubmit={addTxn} onClose={closeModal} tr={tr} />}
       {modal?.type === "editTx" && <TxModal T={T} accs={accs} allCats={allCats} cfg={cfg} onSubmit={editTxn} onClose={closeModal} editTx={modal.data.tx} tr={tr} />}
       {modal?.type === "delTx" && <ConfirmDlg T={T} title={tr("remove") + "?"} sub="This cannot be undone." danger onConfirm={() => delTxn(modal.data.id)} onClose={closeModal} tr={tr} />}
@@ -855,59 +873,63 @@ export default function App() {
 }
 
 // ─── HOME ─────────────────────────────────────────────────────────────────────
-function HomeTab({ txns, accs, cfg, cCats, T, openModal, tr }) {
-  const [p, setP] = useState("monthly");
-  const ft = byPeriod(txns, p);
-  const inc = ft.filter(t => t.type === "income").reduce((s, t) => s + t.amt, 0);
-  const exp = ft.filter(t => t.type === "expense").reduce((s, t) => s + t.amt, 0);
-  const tot = accs.reduce((s, a) => s + a.balance, 0);
-  const sav = inc > 0 ? Math.max(0, Math.min(100, ((inc - exp) / inc) * 100)) : 0;
+function HomeTab({ txns, accs, T, cfg, tr, goToTxns }) {
+  const [showBal, setShowBal] = useState(true);
+  const now = new Date();
+  const m = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const tm = txns.filter(t => t.date.startsWith(m));
+  
+  const mIn = tm.filter(t => t.type === "income").reduce((s, t) => s + t.amt, 0);
+  const mOut = tm.filter(t => t.type === "expense").reduce((s, t) => s + t.amt, 0);
+  const mNet = mIn - mOut;
+  const tot = accs.reduce((s, a) => s + a.bal, 0);
+  const sy = getSym(cfg);
+
   return (
     <div className="tab-content" style={{ paddingBottom: 20 }}>
-      <div style={s.row({ justifyContent: "space-between", padding: "20px 2px 14px" })}>
-        <div>
-          <div style={{ fontSize: 22, fontWeight: 900, color: T.text }}>{tr("myFinances")}</div>
-          <div style={{ fontSize: 13, color: T.muted, marginTop: 2 }}>{tr("welcome")}</div>
+      <div style={s.row({ justifyContent: "space-between", padding: "16px 2px", alignItems: "center", marginBottom: 8 })}>
+        <div style={s.row({ gap: 12 })}>
+          <div style={{ width: 44, height: 44, borderRadius: 22, background: `linear-gradient(135deg,${T.accent},${T.adk})`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 20, fontWeight: 900, boxShadow: `0 4px 12px ${T.accent}40` }}>
+            {tr("welcome").charAt(0)}
+          </div>
+          <div>
+            <div style={{ fontSize: 13, color: T.muted, fontWeight: 600 }}>{tr("welcome")}</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>CashFlow Pro</div>
+          </div>
         </div>
-        <div style={s.row({ gap: 8 })}>
-          <IBtn onClick={() => openModal("cash")} T={T}>{CalcIco(T.sub)}</IBtn>
-          <IBtn onClick={() => openModal("report")} T={T}>{PdfIco(T.sub)}</IBtn>
-        </div>
+        <IBtn onClick={() => setShowBal(!showBal)} T={T}>{showBal ? EyeIco(T.text) : EyeOffIco(T.muted)}</IBtn>
       </div>
-      <PBar p={p} set={setP} T={T} tr={tr} />
 
-      <div style={{ background: `linear-gradient(135deg,${T.accent}28,${T.bg2} 70%)`, borderRadius: 24, padding: "24px 20px", marginBottom: 16, transition: "background .3s ease" }}>
-        <div style={{ fontSize: 11, color: T.muted, fontWeight: 800, letterSpacing: 1.5, textTransform: "uppercase" }}>{tr("totalBalance")}</div>
-        <div style={{ fontSize: 40, fontWeight: 900, color: T.text, letterSpacing: "-1px", margin: "8px 0 20px" }}>{money(tot, cfg)}</div>
-        <div style={s.row({ borderTop: `1px solid ${T.sep}`, paddingTop: 16 })}>
-          {[["income", inc, T.green], ["expense", exp, T.red]].map(([lb, v, c], i) => (
-            <div key={lb} style={s.row({ flex: 1, gap: 10, ...(i ? { paddingLeft: 16, borderLeft: `1px solid ${T.sep}`, marginLeft: 16 } : {}) })}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", background: c, flexShrink: 0 }} />
-              <div>
-                <div style={{ fontSize: 11, color: T.muted, fontWeight: 600 }}>{tr(lb)}</div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: c }}>{money(v, cfg)}</div>
-              </div>
+      <div style={{ background: `linear-gradient(135deg, ${T.accent}, ${T.adk})`, borderRadius: 24, padding: "24px 20px", color: "#fff", position: "relative", overflow: "hidden", boxShadow: `0 12px 32px ${T.accent}40`, marginBottom: 24 }}>
+        <div style={{ position: "absolute", top: -20, right: -20, width: 120, height: 120, borderRadius: "50%", background: "#ffffff15" }} />
+        <div style={{ position: "absolute", bottom: -40, right: 40, width: 80, height: 80, borderRadius: "50%", background: "#ffffff10" }} />
+        
+        <div style={{ fontSize: 13, fontWeight: 600, opacity: .9, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>{tr("totalBalance")}</div>
+        <div style={{ fontSize: 40, fontWeight: 900, letterSpacing: "-1px", marginBottom: 24, display: "flex", alignItems: "baseline", gap: 4 }}>
+          <span style={{ fontSize: 24, opacity: .8 }}>{sy}</span>
+          {showBal ? money(tot, cfg).replace(sy, "") : "••••••"}
+        </div>
+        
+        <div style={s.row({ gap: 16 })}>
+          {[[tr("income"), mIn, T.green], [tr("expense"), mOut, T.red]].map(([l, v, c]) => (
+            <div key={l} style={{ flex: 1, background: "rgba(0,0,0,0.2)", borderRadius: 16, padding: "12px 14px" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, opacity: .8, marginBottom: 4 }}>{l}</div>
+              <div style={{ fontSize: 16, fontWeight: 800 }}>{sy}{showBal ? (v >= 10000 ? (v/1000).toFixed(1)+"k" : v) : "•••"}</div>
             </div>
           ))}
         </div>
       </div>
 
-      <div style={s.card(T, { marginBottom: 16 })}>
-        <div style={s.row({ justifyContent: "space-between", marginBottom: 10 })}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{tr("savingsRate")}</span>
-          <span style={{ fontSize: 13, fontWeight: 800, color: sav > 0 ? T.green : T.red }}>{sav.toFixed(0)}%</span>
-        </div>
-        <div style={{ height: 6, borderRadius: 4, background: T.bg3 }}>
-          <div className="bar-fill" style={{ height: "100%", width: `${sav}%`, borderRadius: 4, background: T.green }} />
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
+      <div style={{ fontSize: 16, fontWeight: 800, color: T.text, marginBottom: 14 }}>{tr("accounts")}</div>
+      <div style={s.row({ gap: 12, overflowX: "auto", paddingBottom: 10, margin: "0 -2px" })}>
         {accs.map(a => (
-          <div key={a.id} style={{ background: a.color + "14", borderRadius: 18, padding: "16px", flexShrink: 0 }}>
-            <div style={{ fontSize: 24 }}>{a.icon}</div>
-            <div style={{ fontSize: 12, color: T.muted, marginTop: 6, fontWeight: 600 }}>{a.name}</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: a.balance >= 0 ? T.text : T.red, marginTop: 4 }}>{money(a.balance, cfg)}</div>
+          <div key={a.id} onClick={() => goToTxns({ aid: a.id })} style={{ flex: "0 0 140px", background: T.bg3, borderRadius: 20, padding: 16, cursor: "pointer", transition: "transform .2s", border: `1.5px solid ${T.sep}` }}>
+            <div style={s.row({ justifyContent: "space-between", marginBottom: 12 })}>
+              <span style={{ fontSize: 22 }}>{a.icon}</span>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: a.color, boxShadow: `0 0 8px ${a.color}80` }} />
+            </div>
+            <div style={{ fontSize: 13, color: T.muted, fontWeight: 600, marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>{showBal ? money(a.bal, cfg) : "•••"}</div>
           </div>
         ))}
       </div>
@@ -1064,39 +1086,38 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr, txFi
   const [limit, setLimit] = useState(50);
   const [p, setP] = useState("all");
   const [query, setQuery] = useState("");
-  const [accF, setAccF] = useState("all");
   const [showS, setShowS] = useState(false);
   const [showDR, setShowDR] = useState(false);
   const [fromD, setFromD] = useState("");
   const [toD, setToD] = useState("");
   const srRef = useRef(null);
 
+  // Read current Account filter from the global state, default to "all"
+  const accF = txFilter.aid || "all";
+
   useEffect(() => { if (showS && srRef.current) srRef.current.focus(); }, [showS]);
 
-  // Base list for the current period/search (ignores type/cat filters so totals are always accurate)
   const periodList = useMemo(() => {
     let r = byPeriod(txns, p);
-    if (accF !== "all") r = r.filter(t => t.aid === accF);
+    if (accF !== "all") r = r.filter(t => t.aid === accF || t.toAid === accF);
     if (fromD) r = r.filter(t => t.date >= fromD);
     if (toD) r = r.filter(t => t.date <= toD);
     if (query.trim()) {
-      // SMART SEARCH: Splits by commas OR spaces
-      const keywords = query.toLowerCase().split(/[\s,]+/).filter(k => k);
+      // SMART SEARCH: Splits ONLY by commas. 
+      // "Bills, Petrol Food" => Searches for "bills" OR "petrol food"
+      const keywords = query.toLowerCase().split(',').map(k => k.trim()).filter(k => k);
       r = r.filter(t => {
         const searchStr = `${t.note} ${getCat(t.cat, cCats).l} ${t.date} ${t.amt}`.toLowerCase();
-        // Returns true if ANY of the typed tags match this transaction
         return keywords.some(k => searchStr.includes(k));
       });
     }
     return [...r].sort((a, b) => b.date.localeCompare(a.date));
   }, [txns, p, query, accF, fromD, toD, cCats]);
 
-  // Totals for the big interactive boxes
   const sIn = periodList.filter(t => t.type === "income").reduce((s, t) => s + t.amt, 0);
   const sOut = periodList.filter(t => t.type === "expense").reduce((s, t) => s + t.amt, 0);
   const sTr = periodList.filter(t => t.type === "transfer").reduce((s, t) => s + t.amt, 0);
 
-  // The actual list rendered on screen (applies the global type/cat filters)
   const list = periodList.filter(t => 
     (txFilter.type === "all" || t.type === txFilter.type) && 
     (txFilter.cat === "all" || t.cat === txFilter.cat)
@@ -1105,7 +1126,7 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr, txFi
   return (
     <div className="tab-content" style={{ paddingBottom: 20 }}>
       <div style={s.row({ justifyContent: "space-between", padding: "20px 2px 16px", gap: 12, overflow: "visible", position: "relative", zIndex: 10 })}>
-        <AccDrop accs={accs} selId={accF} onChange={setAccF} T={T} tr={tr} />
+        <AccDrop accs={accs} selId={accF} onChange={(val) => setTxFilter(prev => ({...prev, aid: val}))} T={T} tr={tr} />
         <div style={s.row({ gap: 8, flexShrink: 0 })}>
           <IBtn onClick={() => setShowS(v => !v)} active={showS} T={T}>{SearchIco(showS ? T.accent : T.sub)}</IBtn>
           <IBtn onClick={() => openModal("report")} T={T}>{PdfIco(T.sub)}</IBtn>
@@ -1118,7 +1139,7 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr, txFi
           <div style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>{SearchIco(T.muted)}</div>
           <input ref={srRef} value={query} onChange={e => setQuery(e.target.value)} 
             onKeyDown={e => { if (e.key === 'Enter') { e.target.blur(); setShowS(false); } }}
-            placeholder={tr("search")}
+            placeholder="Search tags (comma separated)..."
             style={{ background: T.bg2, borderRadius: 14, color: T.text, fontSize: 14, padding: "12px 36px 12px 40px", width: "100%", boxSizing: "border-box" }} />
           {query && <button onClick={() => setQuery("")} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", color: T.muted, fontSize: 18 }}>✕</button>}
         </div>
@@ -1139,54 +1160,60 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr, txFi
 
       <PBar p={p} set={setP} T={T} tr={tr} />
 
-      {/* NEW MULTI-TAG SEARCH CHIPS */}
       {query.trim() !== "" && !showS && (
         <div style={s.row({ gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" })}>
           <span style={{ fontSize: 13, color: T.muted }}>Tags:</span>
-          {query.split(/[\s,]+/).filter(k => k).map((k, i) => (
+          {query.split(',').map(k => k.trim()).filter(k => k).map((k, i) => (
             <button key={i} onClick={() => {
-              // Removes just the clicked tag from the search query
-              const newQ = query.split(/[\s,]+/).filter(w => w && w !== k).join(" ");
+              const newQ = query.split(',').map(w => w.trim()).filter(w => w && w !== k).join(", ");
               setQuery(newQ);
-            }} style={{ padding: "4px 10px", borderRadius: 12, background: T.accent+"22", color: T.accent, fontSize: 12, fontWeight: 700 }}>
+            }} style={{ padding: "6px 12px", borderRadius: 16, background: T.accent+"22", color: T.accent, fontSize: 12, fontWeight: 800 }}>
               {k} ✕
             </button>
           ))}
-          {query.split(/[\s,]+/).filter(k => k).length > 1 && (
-            <button onClick={() => setQuery("")} style={{ padding: "4px 10px", borderRadius: 12, background: T.red+"15", color: T.red, fontSize: 12, fontWeight: 700 }}>Clear All</button>
+          {query.split(',').filter(k => k.trim()).length > 1 && (
+            <button onClick={() => setQuery("")} style={{ padding: "6px 12px", borderRadius: 16, background: T.red+"15", color: T.red, fontSize: 12, fontWeight: 800 }}>Clear All</button>
           )}
         </div>
       )}
 
-      {/* CLEAR CATEGORY BADGE */}
       {txFilter.cat !== "all" && (
         <div style={s.row({ gap: 8, marginBottom: 12 })}>
           <span style={{ fontSize: 13, color: T.muted }}>Filtered by:</span>
-          <button onClick={() => setTxFilter(f => ({ ...f, cat: "all" }))} style={{ padding: "4px 10px", borderRadius: 12, background: T.accent+"22", color: T.accent, fontSize: 12, fontWeight: 700 }}>
+          <button onClick={() => setTxFilter(f => ({ ...f, cat: "all" }))} style={{ padding: "6px 12px", borderRadius: 16, background: T.accent+"22", color: T.accent, fontSize: 12, fontWeight: 800 }}>
             {getCat(txFilter.cat, cCats).l} ✕
           </button>
         </div>
       )}
 
-      {/* NEW INTERACTIVE SUMMARY BOXES ACTING AS FILTERS */}
+      {/* GRAPHICALLY UPGRADED SUMMARY FILTER BOXES */}
       {periodList.length > 0 && (
         <div style={s.row({ gap: 10, marginBottom: 16 })}>
-          {[["In", sIn, T.green, "income"], ["Out", sOut, T.red, "expense"], ["Transfer", sTr, T.accent, "transfer"]].map(([l, v, c, typ]) => {
+          {[["INCOME", sIn, T.green, "income"], ["EXPENSE", sOut, T.red, "expense"], ["TRANSFER", sTr, T.accent, "transfer"]].map(([l, v, c, typ]) => {
             const active = txFilter.type === typ;
             return (
               <div key={l} onClick={() => setTxFilter(f => ({ ...f, type: f.type === typ ? "all" : typ }))}
-                style={s.col({ flex: 1, background: active ? c + "25" : c + "12", borderRadius: 14, padding: "12px 14px", border: `1.5px solid ${active ? c + "80" : "transparent"}`, cursor: "pointer", transition: "all .2s" })}>
-                <span style={{ fontSize: 11, color: c, fontWeight: 800 }}>{tr(l.toLowerCase()) || l}</span>
-                <span style={{ fontSize: 15, fontWeight: 900, color: c, marginTop: 4 }}>{money(Math.abs(v), cfg)}</span>
+                style={s.col({ 
+                  flex: 1, 
+                  background: active ? `linear-gradient(135deg, ${c}30, ${c}10)` : T.bg3, 
+                  borderRadius: 16, 
+                  padding: "14px", 
+                  border: `1.5px solid ${active ? c + "90" : "transparent"}`, 
+                  cursor: "pointer", 
+                  transition: "all .3s ease",
+                  boxShadow: active ? `0 6px 16px ${c}30` : `0 2px 8px ${T.sep}`
+                })}>
+                <span style={{ fontSize: 10, color: active ? c : T.muted, fontWeight: 900, letterSpacing: 1 }}>{tr(l.toLowerCase()) || l}</span>
+                <span style={{ fontSize: 16, fontWeight: 900, color: active ? T.text : c, marginTop: 4 }}>{money(Math.abs(v), cfg)}</span>
               </div>
             );
           })}
-          <span style={{ alignSelf: "center", fontSize: 12, fontWeight: 700, color: T.muted, flexShrink: 0, padding: "0 4px" }}>{list.length}</span>
         </div>
       )}
 
       {list.length === 0 && <div style={{ textAlign: "center", color: T.muted, padding: "40px 0", fontSize: 14, fontWeight: 600 }}>{tr("noTxns")}</div>}
 
+      {/* PASSING ONEDIT SO IT OPENS THE VIEW MODAL FIRST */}
       {list.slice(0, limit).map(t => (
         <TxCard key={t.id} t={t} cfg={cfg} cCats={cCats} T={T} onEdit={() => onEdit(t)} onDel={() => onDel(t.id)} accs={accs} showAcc />
       ))}
@@ -1816,19 +1843,21 @@ function ReportModal({ T, txns, accs, cCats, cfg, onClose, onExport, tr }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 360 }}>
           <thead>
             <tr style={{ background: T.bg2 }}>
-              {["Date", "Note", "Cat", "In", "Out", "Bal"].map(h => (
+              {["Date", "Note", "Account", "In", "Out", "Bal"].map(h => (
                 <th key={h} style={{ padding: "10px 8px", textAlign: "left", color: T.muted, fontWeight: 700, fontSize: 11, borderBottom: `1px solid ${T.sep}` }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {rb.slice(0, 16).map((t, i) => {
-              const c = t.type === "transfer" ? { i: "🔄", l: "Transfer" } : getCat(t.cat, cCats);
+              const fromAcc = accs.find(a => a.id === t.aid)?.name || "Unknown";
+              const accStr = t.type === "transfer" ? `${fromAcc} → ${accs.find(a => a.id === t.toAid)?.name || "?"}` : fromAcc;
+              
               return (
                 <tr key={t.id} style={{ borderBottom: i !== 15 && i !== rb.length - 1 ? `1px solid ${T.sep}` : "none" }}>
                   <td style={{ padding: "10px 8px", color: T.muted, fontSize: 11, whiteSpace: "nowrap" }}>{t.date}</td>
                   <td style={{ padding: "10px 8px", color: T.text, fontWeight: 600, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.note || (t.type === "transfer" ? "Internal Adjust" : "")}</td>
-                  <td style={{ padding: "10px 8px", whiteSpace: "nowrap", color: T.text }}>{c.i} {c.l}</td>
+                  <td style={{ padding: "10px 8px", color: T.sub, fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 80 }}>{accStr}</td>
                   <td style={{ padding: "10px 8px", color: T.green, fontWeight: 800, whiteSpace: "nowrap" }}>{t.isIn ? `+${sy}${t.amt.toFixed(2)}` : ""}</td>
                   <td style={{ padding: "10px 8px", color: T.red, fontWeight: 800, whiteSpace: "nowrap" }}>{t.isOut ? `-${sy}${t.amt.toFixed(2)}` : ""}</td>
                   <td style={{ padding: "10px 8px", fontWeight: 800, color: T.text, whiteSpace: "nowrap" }}>{sy}{Math.abs(t.bal).toFixed(0)}</td>
@@ -1938,6 +1967,58 @@ function ConfirmDlg({ T, title, sub, onConfirm, onClose, danger, tr }) {
         <button onClick={onClose} style={{ flex: 1, padding: "14px", borderRadius: 14, background: T.bg3, color: T.sub, fontSize: 14, fontWeight: 700 }}>{tr("cancel")}</button>
         <button onClick={onConfirm} style={{ flex: 1, padding: "14px", borderRadius: 14, background: danger ? `linear-gradient(135deg,${T.red},#b01010)` : `linear-gradient(135deg,${T.accent},${T.adk})`, color: "#fff", fontSize: 14, fontWeight: 800 }}>
           {danger ? tr("delete") : tr("confirm")}
+        </button>
+      </div>
+    </Sheet>
+  );
+}
+
+function TxViewModal({ t, accs, cCats, T, cfg, onClose, onEdit, onDel }) {
+  if (!t) return null;
+  const isTr = t.type === "transfer";
+  const cat = isTr ? { i: "🔄", l: "Transfer", c: T.accent } : getCat(t.cat, cCats);
+  const fromAcc = accs.find(a => a.id === t.aid) || { name: "Unknown", icon: "🏦" };
+  const toAcc = isTr ? (accs.find(a => a.id === t.toAid) || { name: "Unknown", icon: "🏦" }) : null;
+  const c = t.type === "income" ? T.green : t.type === "expense" ? T.red : T.accent;
+
+  return (
+    <Sheet T={T} onClose={onClose} title="Transaction Details">
+      <div style={{ background: T.bg3, borderRadius: 24, padding: "24px 20px", textAlign: "center", marginBottom: 20 }}>
+        <div style={{ width: 64, height: 64, borderRadius: 32, background: cat.c + "20", fontSize: 32, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+          {cat.i}
+        </div>
+        <div style={{ fontSize: 32, fontWeight: 900, color: c, marginBottom: 8 }}>
+          {t.type === "expense" ? "-" : "+"}{money(t.amt, cfg)}
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>{cat.l}</div>
+        <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>{t.date} {cfg.showTime ? `• ${t.time || ""}` : ""}</div>
+      </div>
+
+      <div style={{ background: T.bg2, borderRadius: 16, padding: "16px", marginBottom: 24, border: `1.5px solid ${T.sep}` }}>
+        <div style={s.row({ justifyContent: "space-between", paddingBottom: 12, borderBottom: `1px solid ${T.sep}` })}>
+          <span style={{ fontSize: 13, color: T.muted, fontWeight: 600 }}>{isTr ? "From Account" : "Account"}</span>
+          <span style={{ fontSize: 14, color: T.text, fontWeight: 800 }}>{fromAcc.icon} {fromAcc.name}</span>
+        </div>
+        
+        {isTr && (
+          <div style={s.row({ justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${T.sep}` })}>
+            <span style={{ fontSize: 13, color: T.muted, fontWeight: 600 }}>To Account</span>
+            <span style={{ fontSize: 14, color: T.text, fontWeight: 800 }}>{toAcc.icon} {toAcc.name}</span>
+          </div>
+        )}
+
+        <div style={s.row({ justifyContent: "space-between", paddingTop: 12, alignItems: "flex-start" })}>
+          <span style={{ fontSize: 13, color: T.muted, fontWeight: 600, marginTop: 2 }}>Note</span>
+          <span style={{ fontSize: 14, color: T.text, fontWeight: 600, textAlign: "right", maxWidth: "65%" }}>{t.note || "—"}</span>
+        </div>
+      </div>
+
+      <div style={s.row({ gap: 12 })}>
+        <button onClick={() => { onDel(t.id); onClose(); }} style={{ flex: 1, padding: "16px", borderRadius: 16, background: T.red + "15", color: T.red, fontSize: 15, fontWeight: 800 }}>
+          Delete
+        </button>
+        <button onClick={() => { onEdit(t); onClose(); }} style={{ flex: 2, padding: "16px", borderRadius: 16, background: `linear-gradient(135deg,${T.accent},${T.adk})`, color: "#fff", fontSize: 15, fontWeight: 800, boxShadow: `0 6px 20px ${T.accent}40` }}>
+          Edit Transaction
         </button>
       </div>
     </Sheet>
