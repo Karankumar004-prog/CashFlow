@@ -616,7 +616,8 @@ export default function App() {
   const safeCfg = cfg || DEF_CFG;
 
   const [unlocked, setUnlocked] = useState(!safeCfg.passwordEnabled);
-  const lockTimer = useRef(null); 
+  const [isBg, setIsBg] = useState(false); // 🛡️ NEW: Tracks if app is minimized
+  const lockTimer = useRef(null);
   const [txFilter, setTxFilter] = useState({ type: "all", cat: "all" });
   const goToTxns = (filters) => { setTxFilter(prev => ({ ...prev, ...filters })); setTab("txns"); };
 
@@ -628,6 +629,9 @@ export default function App() {
     let listenerHandle = null;
 
     const handleState = async ({ isActive }) => {
+      // 🛡️ INSTANTLY trigger the privacy overlay
+      setIsBg(!isActive); 
+
       if (!isActive) {
         lockTimer.current = setTimeout(() => {
           if (safeCfg.passwordEnabled) setUnlocked(false);
@@ -918,6 +922,15 @@ export default function App() {
       {toast && (
         <div style={{ position: "fixed", bottom: 96, left: "50%", transform: "translateX(-50%)", padding: "12px 24px", borderRadius: 24, color: "#fff", fontSize: 13, fontWeight: 700, boxShadow: "0 8px 24px rgba(0,0,0,.4)", zIndex: 400, maxWidth: "85vw", textAlign: "center", lineHeight: 1.4, wordBreak: "break-word", background: toast.color, animation: "toastPop .25s ease" }}>
           {toast.msg}
+        </div>
+      )}
+
+      {/* 🛡️ SECURITY PRIVACY SCREEN OVERLAY */}
+      {isBg && (
+        <div style={{ position: "fixed", inset: 0, background: T.bg, zIndex: 999999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+          <AppLogo size={80} />
+          <div style={{ marginTop: 24, fontSize: 18, fontWeight: 800, color: T.text, letterSpacing: 1 }}>CashFlow Pro</div>
+          <div style={{ fontSize: 13, color: T.muted, marginTop: 8, fontWeight: 600 }}>Securing your data...</div>
         </div>
       )}
     </div>
