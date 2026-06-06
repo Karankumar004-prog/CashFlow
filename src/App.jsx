@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem'; // This is also needed for web, as we use it for local backups
 import { Haptics } from '@capacitor/haptics'; // For tactile feedback on mobile devices, enhancing user experience during interactions like button presses and notifications
-import { App as CapApp } from '@capacitor/app'; // To handle app lifecycle events, such as saving data when the app is backgrounded or closed, ensuring data integrity and a seamless user experience
+import { App as CapApp } from '@capacitor/app';
 import { NativeBiometric } from '@capgo/capacitor-native-biometric';
 
 // ─── TRANSLATIONS (i18n) ──────────────────────────────────────────────────────
@@ -99,10 +99,13 @@ const fmtTime = (t, s) => {
   return t;
 };
 const money = (n, s) => {
+  // FIX: Safeguard against undefined, null, or NaN to prevent fatal crashes
+  const validNum = (n == null || isNaN(n)) ? 0 : Number(n);
+  
   const sy = getSym(s), f = s?.numberFormat || "1,234.56";
-  if (f === "1.234,56") return sy + n.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  if (f === "1234.56") return sy + n.toFixed(2);
-  return sy + new Intl.NumberFormat("en-US", { minimumFractionDigits: 2 }).format(n);
+  if (f === "1.234,56") return sy + validNum.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  if (f === "1234.56") return sy + validNum.toFixed(2);
+  return sy + new Intl.NumberFormat("en-US", { minimumFractionDigits: 2 }).format(validNum);
 };
 
 const getCat = (id, xc = []) => [...CATS.income, ...CATS.expense, ...xc].find(c => c.id === id) || { l: id, i: "•", c: "#888" };
@@ -123,16 +126,35 @@ const byPeriod = (list, p) => {
   });
 };
 function useLS(key, init) {
-  const [v, setV] = useState(() => { try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : init; } catch { return init; } });
-  useEffect(() => { try { localStorage.setItem(key, JSON.stringify(v)); } catch { } }, [key, v]);
+  const [v, setV] = useState(() => { 
+    try { 
+      const s = localStorage.getItem(key); 
+      if (!s) return init;
+      
+      const parsed = JSON.parse(s);
+      
+      // CRITICAL SAFETY: If we expect an array but local storage has a broken object/null, force a reset.
+      if (Array.isArray(init) && !Array.isArray(parsed)) return init;
+      
+      // CRITICAL SAFETY: Prevent null values from crashing the app
+      return (parsed !== null && parsed !== undefined) ? parsed : init; 
+    } catch { 
+      return init; 
+    } 
+  });
+  
+  useEffect(() => { 
+    try { localStorage.setItem(key, JSON.stringify(v)); } catch { } 
+  }, [key, v]);
+  
   return [v, setV];
 }
 
 // ─── GLOBAL STYLES ────────────────────────────────────────────────────────────
 function GlobalStyle({ T }) {
-  const ref = useRef(null);
-  const isDark = T.bg === "#0f1016"; // Fixed: Now correctly matches the new DARK.bg hex
+  const isDark = T.bg === "#0f1016";
   const calFilter = isDark ? "invert(.55)" : "invert(.35)";
+  
   const cssLines = [
     "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }",
     "html, body { overscroll-behavior-y: none; touch-action: pan-y; }",
@@ -171,12 +193,11 @@ function GlobalStyle({ T }) {
     ".bar-fill { animation: barGrow 1s cubic-bezier(.2,.8,.2,1) both; }",
     "@keyframes tabSlide { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }",
     ".tab-content { animation: tabSlide .35s cubic-bezier(0.2, 0.8, 0.2, 1) both; }",
-    ".shake-anim { animation: shake .4s cubic-bezier(.36,.07,.19,.97) both; }",
+    ".shake-anim { animation: shake .4s cubic-bezier(.36,.07,.19,.97) both; }"
   ].join(" ");
 
-  if (ref.current) ref.current.textContent = cssLines;
-  useEffect(() => { if (ref.current) ref.current.textContent = cssLines; });
-  return React.createElement("style", { ref });
+  // FIX: Safely inject HTML to avoid conflicting with React's render cycle
+  return <style dangerouslySetInnerHTML={{ __html: cssLines }} />;
 }
 
 // ─── BASE UI ──────────────────────────────────────────────────────────────────
@@ -396,7 +417,8 @@ const CalIco = (color) => <svg width="18" height="18" viewBox="0 0 24 24" fill="
 
 // ---> NEW COMPONENTS ADDED HERE <---
 const CalcIco = (color) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="2" width="16" height="20" rx="2" /><line x1="8" y1="6" x2="16" y2="6" /><line x1="8" y1="10" x2="8.01" y2="10" /><line x1="12" y1="10" x2="12.01" y2="10" /><line x1="16" y1="10" x2="16.01" y2="10" /><line x1="8" y1="14" x2="8.01" y2="14" /><line x1="12" y1="14" x2="12.01" y2="14" /><line x1="16" y1="14" x2="16.01" y2="14" /><line x1="8" y1="18" x2="8.01" y2="18" /><line x1="12" y1="18" x2="16" y2="18" /></svg>;
-
+const EyeIco = (color) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>;
+const EyeOffIco = (color) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>;
 const AppLogo = ({ size = 40 }) => (
   <svg width={size} height={size} viewBox="0 0 512 512" style={{ borderRadius: size * 0.22, flexShrink: 0 }}>
     <rect width="512" height="512" rx="112" fill="#1a1b26" />
@@ -461,10 +483,16 @@ function Sel({ T, children, style, ...props }) {
 function LockScreen({ T, cfg, onUnlock, tr }) {
   const [pin, setPin] = useState("");
   const [err, setErr] = useState(false);
-  const [bioMsg, setBioMsg] = useState(""); // Stores the biometric warning
+  const [bioMsg, setBioMsg] = useState(""); 
+
+  // FIX: Safely fallback to an empty string to prevent "undefined.length" crashes
+  const pwd = cfg?.password || ""; 
 
   const handleBio = async () => {
     try {
+      // 🛡️ Ensure the plugin exists before calling it
+      if (!NativeBiometric || !NativeBiometric.isAvailable) throw new Error("Plugin missing");
+      
       const bio = await NativeBiometric.isAvailable();
       if (bio.isAvailable) {
         await NativeBiometric.verifyIdentity({
@@ -474,11 +502,12 @@ function LockScreen({ T, cfg, onUnlock, tr }) {
         onUnlock(); 
       }
     } catch (e) {
-      // ⚠️ FINGERPRINT FAILED OR CANCELLED
+      const msg = (e.message || String(e)).toLowerCase();
+      if (msg.includes("cancel") || msg.includes("user_cancel") || msg.includes("fallback") || msg.includes("-2") || msg.includes("13")) {
+        return; 
+      }
       try { await Haptics.vibrate(); } catch (err) {}
-      setBioMsg("⚠️ Fingerprint failed. Please use PIN.");
-      
-      // Trigger the red shake animation
+      setBioMsg("⚠️ Fingerprint failed or unavailable. Please use PIN.");
       setErr(true);
       setTimeout(() => setErr(false), 500);
     }
@@ -492,12 +521,13 @@ function LockScreen({ T, cfg, onUnlock, tr }) {
     if (err) return;
     try { await Haptics.impact({ style: 'light' }); } catch (e) {} 
     
-    setBioMsg(""); // Clear warning as soon as user starts typing
+    setBioMsg(""); 
     const next = pin + n;
     setPin(next);
     
-    if (next.length === cfg.password.length) {
-      if (next === cfg.password) setTimeout(onUnlock, 150);
+    // FIX: Compare against our safe 'pwd' variable
+    if (next.length === pwd.length) {
+      if (next === pwd) setTimeout(onUnlock, 150);
       else {
         setErr(true);
         try { await Haptics.vibrate(); } catch (e) { } 
@@ -505,12 +535,12 @@ function LockScreen({ T, cfg, onUnlock, tr }) {
       }
     }
   };
+  
   const handleDel = () => { setPin(p => p.slice(0, -1)); setBioMsg(""); };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: T.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
       
-      {/* INJECTED PREMIUM SHAKE ANIMATION */}
       <style>{`
         @keyframes premiumShake {
           0%, 100% { transform: translateX(0); }
@@ -525,14 +555,13 @@ function LockScreen({ T, cfg, onUnlock, tr }) {
       <div style={{ marginBottom: 32 }}><AppLogo size={72} /></div>
       <div style={{ fontSize: 20, fontWeight: 800, color: T.text, marginBottom: 8 }}>{tr("appPwd") || "App Password"}</div>
       
-      {/* BIOMETRIC WARNING MESSAGE */}
       <div style={{ height: 20, fontSize: 13, color: T.red, fontWeight: 800, marginBottom: 16, opacity: bioMsg ? 1 : 0, transition: "opacity .2s", display: "flex", alignItems: "center" }}>
         {bioMsg}
       </div>
 
-      {/* PIN DOTS WITH SHAKE CLASS */}
       <div className={err ? "shake-error" : ""} style={s.row({ gap: 14, marginBottom: 48, height: 20 })}>
-        {Array.from({ length: cfg.password.length }).map((_, i) => (
+        {/* FIX: Ensure length defaults to at least 4 if state is corrupted, preventing visual bugs */}
+        {Array.from({ length: pwd.length || 4 }).map((_, i) => (
           <div key={i} style={{ width: 16, height: 16, borderRadius: "50%", background: err ? T.red : (i < pin.length ? T.accent : T.bg3), transition: "background .2s ease" }} />
         ))}
       </div>
@@ -542,7 +571,6 @@ function LockScreen({ T, cfg, onUnlock, tr }) {
           <button key={n} className="pin-btn" onClick={() => handlePress(n.toString())} style={{ height: 70, borderRadius: 35, background: T.bg2, fontSize: 26, fontWeight: 600, color: T.text, boxShadow: `0 4px 12px ${T.sep}` }}>{n}</button>
         ))}
         
-        {/* RETRY FINGERPRINT BUTTON */}
         {cfg.useBiometrics ? (
           <button className="pin-btn" onClick={handleBio} style={{ height: 70, borderRadius: 35, background: "transparent", fontSize: 28, color: T.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/><path d="M14 13.12c0 2.38 0 6.38-1 8.88"/><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"/><path d="M2 12a10 10 0 0 1 18-6"/><path d="M2 16h.01"/><path d="M21.8 16c.2-2 .131-5.354 0-6"/><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2"/><path d="M8.65 22c.21-.66.45-1.32.57-2"/><path d="M9 6.8a6 6 0 0 1 9 5.2v2"/></svg>
@@ -567,8 +595,14 @@ export default function App() {
   const [tab, setTab] = useState("home");
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState(null);
-  const [unlocked, setUnlocked] = useState(!cfg.passwordEnabled);
 
+  // --- 🛡️ ARMOR LAYER: Guarantees data integrity before rendering ---
+  const safeTxns = Array.isArray(txns) ? txns : [];
+  const safeAccs = Array.isArray(accs) ? accs : [];
+  const safeCCats = Array.isArray(cCats) ? cCats : [];
+  const safeCfg = cfg || DEF_CFG;
+
+  const [unlocked, setUnlocked] = useState(!safeCfg.passwordEnabled);
   const lockTimer = useRef(null); 
   const [txFilter, setTxFilter] = useState({ type: "all", cat: "all" });
   const goToTxns = (filters) => { setTxFilter(prev => ({ ...prev, ...filters })); setTab("txns"); };
@@ -578,25 +612,31 @@ export default function App() {
 
   // 1. Advanced Background Locking Engine (3-minute timer)
   useEffect(() => {
+    let listenerHandle = null;
+
     const handleState = async ({ isActive }) => {
       if (!isActive) {
-        // APP WENT TO BACKGROUND - Start 3 min timer (180,000 ms)
         lockTimer.current = setTimeout(() => {
-          if (cfg.passwordEnabled) setUnlocked(false);
+          if (safeCfg.passwordEnabled) setUnlocked(false);
         }, 180000);
       } else {
-        // APP CAME TO FOREGROUND
         if (lockTimer.current) {
           clearTimeout(lockTimer.current);
           lockTimer.current = null;
         }
-        // Biometrics are now safely handled by the LockScreen component mounting!
       }
     };
 
-    const sub = CapApp.addListener('appStateChange', handleState);
-    return () => sub.remove();
-  }, [cfg.passwordEnabled]);
+    const setupListener = async () => {
+      listenerHandle = await CapApp.addListener('appStateChange', handleState);
+    };
+    
+    setupListener();
+
+    return () => {
+      if (listenerHandle) listenerHandle.remove();
+    };
+  }, [safeCfg.passwordEnabled]);
 
   // 2. Lock Zooming on mobile via viewport tag injection
   useEffect(() => {
@@ -608,8 +648,6 @@ export default function App() {
     }
     meta.content = "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover";
   }, []);
-
-  const T = cfg.theme === "light" ? LIGHT : DARK;
 
   // 3. Request permissions on first boot for new installs
   useEffect(() => {
@@ -626,42 +664,40 @@ export default function App() {
 
   // Helper to verify permissions before exporting
   const ensureStoragePermission = async () => {
-  try {
-    const check = await Filesystem.checkPermissions();
-    if (check.publicStorage === 'granted') return true;
-    
-    // If not granted, trigger the Android native popup
-    const req = await Filesystem.requestPermissions();
-    return req.publicStorage === 'granted';
-  } catch (e) {
-    // Fails silently on the web, allows it to pass
-    return true; 
-  }
-};
+    try {
+      const check = await Filesystem.checkPermissions();
+      if (check.publicStorage === 'granted') return true;
+      const req = await Filesystem.requestPermissions();
+      return req.publicStorage === 'granted';
+    } catch (e) {
+      return true; 
+    }
+  };
+
+  // --- SINGLE DECLARATION OF VARIABLES ---
+  const T = safeCfg.theme === "light" ? LIGHT : DARK;
+
+  const accsB = useMemo(() => safeAccs.map(a => {
+    const inc = safeTxns.filter(t => t.aid === a.id && t.type === "income").reduce((s, t) => s + (Number(t.amt)||0), 0);
+    const exp = safeTxns.filter(t => t.aid === a.id && t.type === "expense").reduce((s, t) => s + (Number(t.amt)||0), 0);
+    const trOut = safeTxns.filter(t => t.aid === a.id && t.type === "transfer").reduce((s, t) => s + (Number(t.amt)||0), 0);
+    const trIn = safeTxns.filter(t => t.toAid === a.id && t.type === "transfer").reduce((s, t) => s + (Number(t.amt)||0), 0);
+
+    return { ...a, balance: inc - exp - trOut + trIn, tIn: inc, tEx: exp };
+  }), [safeAccs, safeTxns]);
+
+  const allCats = useMemo(() => ({
+    income: [...CATS.income, ...safeCCats.filter(c => c.type === "income")],
+    expense: [...CATS.expense, ...safeCCats.filter(c => c.type === "expense")],
+  }), [safeCCats]);
 
   // Translation Engine
-  const tr = (key) => DICT[cfg.language]?.[key] || DICT["English"][key] || key;
+  const tr = (key) => DICT[safeCfg.language]?.[key] || DICT["English"][key] || key;
 
   const showToast = (msg, color) => { setToast({ msg, color: color || T.accent }); setTimeout(() => setToast(null), 2500); };
   const openModal = (type, data = {}) => setModal({ type, data });
   const closeModal = () => setModal(null);
   const setSetting = (k, v) => setCfg(c => ({ ...c, [k]: v }));
-
-  const accsB = useMemo(() => accs.map(a => {
-    const inc = txns.filter(t => t.aid === a.id && t.type === "income").reduce((s, t) => s + t.amt, 0);
-    const exp = txns.filter(t => t.aid === a.id && t.type === "expense").reduce((s, t) => s + t.amt, 0);
-
-    // Double-Entry Transfer Logic
-    const trOut = txns.filter(t => t.aid === a.id && t.type === "transfer").reduce((s, t) => s + t.amt, 0);
-    const trIn = txns.filter(t => t.toAid === a.id && t.type === "transfer").reduce((s, t) => s + t.amt, 0);
-
-    return { ...a, balance: inc - exp - trOut + trIn, tIn: inc, tEx: exp };
-  }), [accs, txns]);
-
-  const allCats = useMemo(() => ({
-    income: [...CATS.income, ...cCats.filter(c => c.type === "income")],
-    expense: [...CATS.expense, ...cCats.filter(c => c.type === "expense")],
-  }), [cCats]);
 
   // CRUD
   const addTxn = t => { setTxns(p => [{ ...t, id: Date.now() }, ...p]); showToast(t.type === "income" ? "💚 " + tr("income") : "💸 " + tr("expense")); closeModal(); };
@@ -818,18 +854,20 @@ export default function App() {
 
   const TABS = [{ id: "home", ic: "⊞", lb: tr("home") }, { id: "stats", ic: "◈", lb: tr("stats") }, { id: "txns", ic: "≡", lb: tr("txns") }, { id: "accounts", ic: "◫", lb: tr("accounts") }, { id: "settings", ic: "⚙", lb: tr("settings") }];
 
-  if (!unlocked) return <LockScreen T={T} cfg={cfg} onUnlock={() => setUnlocked(true)} tr={tr} />;
+  // 1. Pass safeCfg to LockScreen
+  if (!unlocked) return <LockScreen T={T} cfg={safeCfg} onUnlock={() => setUnlocked(true)} tr={tr} />;
 
   return (
     <div style={{ height: "100dvh", width: "100vw", margin: "0 auto", background: T.bg, color: T.text, fontFamily: "'DM Sans',sans-serif", display: "flex", flexDirection: "column", position: "relative", overflowX: "hidden" }}>
       <GlobalStyle T={T} />
 
       <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "0 16px", paddingBottom: 110 }}>
-        {tab === "home" && <HomeTab txns={txns} accs={accs} T={T} cfg={cfg} tr={tr} goToTxns={goToTxns} />}
-        {tab === "stats" && <StatsTab txns={txns} cfg={cfg} cCats={cCats} T={T} accs={accsB} tr={tr} goToTxns={goToTxns} />}
-        {tab === "txns" && <TxnsTab txns={txns} cfg={cfg} cCats={cCats} T={T} accs={accs} onEdit={setViewTx} onDel={delTx} openModal={openModal} tr={tr} txFilter={txFilter} setTxFilter={setTxFilter} />}
-        {tab === "accounts" && <AccountsTab accs={accsB} cfg={cfg} T={T} onAdd={() => openModal("addAcc")} onEdit={a => openModal("editAcc", { acc: a })} onDel={id => openModal("delAcc", { id })} tr={tr} />}
-        {tab === "settings" && <SettingsTab cfg={cfg} setSetting={setSetting} T={T} localBackup={localBackup} driveBackup={driveBackup} driveRestore={driveRestore} openModal={openModal} gUser={gUser} gLogin={() => gLogin().then(t => t && showToast("✅ Signed in"))} gSignOut={gSignOut} cCats={cCats} onAddCat={() => openModal("addCat")} onDelCat={delCat} G_ID={G_ID} tr={tr} />}
+        {/* 2. Pass safe variables to all tabs */}
+        {tab === "home" && <HomeTab txns={safeTxns} accs={accsB} T={T} cfg={safeCfg} tr={tr} goToTxns={goToTxns} openModal={openModal} />}
+        {tab === "stats" && <StatsTab txns={safeTxns} cfg={safeCfg} cCats={safeCCats} T={T} accs={accsB} tr={tr} goToTxns={goToTxns} />}
+        {tab === "txns" && <TxnsTab txns={safeTxns} cfg={safeCfg} cCats={safeCCats} T={T} accs={safeAccs} onEdit={setViewTx} onDel={id => openModal("delTx", { id })} openModal={openModal} tr={tr} txFilter={txFilter} setTxFilter={setTxFilter} />}        
+        {tab === "accounts" && <AccountsTab accs={accsB} cfg={safeCfg} T={T} onAdd={() => openModal("addAcc")} onEdit={a => openModal("editAcc", { acc: a })} onDel={id => openModal("delAcc", { id })} tr={tr} />}
+        {tab === "settings" && <SettingsTab cfg={safeCfg} setSetting={setSetting} T={T} localBackup={localBackup} driveBackup={driveBackup} driveRestore={driveRestore} openModal={openModal} gUser={gUser} gLogin={() => gLogin().then(t => t && showToast("✅ Signed in"))} gSignOut={gSignOut} cCats={safeCCats} onAddCat={() => openModal("addCat")} onDelCat={delCat} G_ID={G_ID} tr={tr} />}
       </div>
 
       {/* ADD BUTTON (HIDDEN ON SETTINGS TAB) */}
@@ -850,7 +888,8 @@ export default function App() {
         ))}
       </nav>
       
-      {viewTx && <TxViewModal t={viewTx} accs={accs} cCats={cCats} T={T} cfg={cfg} onClose={() => setViewTx(null)} onEdit={setEditTx} onDel={id => { setTxns(p => p.filter(x => x.id !== id)); }} />}
+      {viewTx && <TxViewModal t={viewTx} accs={accs} cCats={cCats} T={T} cfg={cfg} onClose={() => setViewTx(null)} onEdit={setEditTx} onDel={id => openModal("delTx", { id })} />}
+      {editTx && <TxModal T={T} accs={accsB} allCats={allCats} cfg={safeCfg} onSubmit={t => { editTxn(t); setEditTx(null); }} onClose={() => setEditTx(null)} editTx={editTx} tr={tr} />}
       {modal?.type === "addTx" && <TxModal T={T} accs={accs} allCats={allCats} cfg={cfg} onSubmit={addTxn} onClose={closeModal} tr={tr} />}
       {modal?.type === "editTx" && <TxModal T={T} accs={accs} allCats={allCats} cfg={cfg} onSubmit={editTxn} onClose={closeModal} editTx={modal.data.tx} tr={tr} />}
       {modal?.type === "delTx" && <ConfirmDlg T={T} title={tr("remove") + "?"} sub="This cannot be undone." danger onConfirm={() => delTxn(modal.data.id)} onClose={closeModal} tr={tr} />}
@@ -873,33 +912,37 @@ export default function App() {
 }
 
 // ─── HOME ─────────────────────────────────────────────────────────────────────
-function HomeTab({ txns, accs, T, cfg, tr, goToTxns }) {
+function HomeTab({ txns, accs, T, cfg, tr, goToTxns, openModal }) {
   const [showBal, setShowBal] = useState(true);
   const now = new Date();
   const m = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const tm = txns.filter(t => t.date.startsWith(m));
   
+  const tm = txns.filter(t => (t.date || "").startsWith(m));
   const mIn = tm.filter(t => t.type === "income").reduce((s, t) => s + t.amt, 0);
   const mOut = tm.filter(t => t.type === "expense").reduce((s, t) => s + t.amt, 0);
-  const mNet = mIn - mOut;
-  const tot = accs.reduce((s, a) => s + a.bal, 0);
+  const tot = accs.reduce((s, a) => s + (a.balance || 0), 0); 
   const sy = getSym(cfg);
 
   return (
     <div className="tab-content" style={{ paddingBottom: 20 }}>
+      
+      {/* HEADER: Restored AppLogo and Action Icons */}
       <div style={s.row({ justifyContent: "space-between", padding: "16px 2px", alignItems: "center", marginBottom: 8 })}>
         <div style={s.row({ gap: 12 })}>
-          <div style={{ width: 44, height: 44, borderRadius: 22, background: `linear-gradient(135deg,${T.accent},${T.adk})`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 20, fontWeight: 900, boxShadow: `0 4px 12px ${T.accent}40` }}>
-            {tr("welcome").charAt(0)}
-          </div>
+          <AppLogo size={44} />
           <div>
             <div style={{ fontSize: 13, color: T.muted, fontWeight: 600 }}>{tr("welcome")}</div>
             <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>CashFlow Pro</div>
           </div>
         </div>
-        <IBtn onClick={() => setShowBal(!showBal)} T={T}>{showBal ? EyeIco(T.text) : EyeOffIco(T.muted)}</IBtn>
+        <div style={s.row({ gap: 8 })}>
+          <IBtn onClick={() => openModal("cash")} T={T}>💵</IBtn>
+          <IBtn onClick={() => openModal("report")} T={T}>🖨️</IBtn>
+          <IBtn onClick={() => setShowBal(!showBal)} T={T}>{showBal ? EyeIco(T.text) : EyeOffIco(T.muted)}</IBtn>
+        </div>
       </div>
 
+      {/* TOTAL BALANCE CARD */}
       <div style={{ background: `linear-gradient(135deg, ${T.accent}, ${T.adk})`, borderRadius: 24, padding: "24px 20px", color: "#fff", position: "relative", overflow: "hidden", boxShadow: `0 12px 32px ${T.accent}40`, marginBottom: 24 }}>
         <div style={{ position: "absolute", top: -20, right: -20, width: 120, height: 120, borderRadius: "50%", background: "#ffffff15" }} />
         <div style={{ position: "absolute", bottom: -40, right: 40, width: 80, height: 80, borderRadius: "50%", background: "#ffffff10" }} />
@@ -920,23 +963,23 @@ function HomeTab({ txns, accs, T, cfg, tr, goToTxns }) {
         </div>
       </div>
 
+      {/* ACCOUNTS: Restored 4-Tile Grid Layout */}
       <div style={{ fontSize: 16, fontWeight: 800, color: T.text, marginBottom: 14 }}>{tr("accounts")}</div>
-      <div style={s.row({ gap: 12, overflowX: "auto", paddingBottom: 10, margin: "0 -2px" })}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, paddingBottom: 10 }}>
         {accs.map(a => (
-          <div key={a.id} onClick={() => goToTxns({ aid: a.id })} style={{ flex: "0 0 140px", background: T.bg3, borderRadius: 20, padding: 16, cursor: "pointer", transition: "transform .2s", border: `1.5px solid ${T.sep}` }}>
+          <div key={a.id} onClick={() => goToTxns({ aid: a.id })} style={{ background: T.bg3, borderRadius: 20, padding: 16, cursor: "pointer", transition: "transform .2s", border: `1.5px solid ${T.sep}` }}>
             <div style={s.row({ justifyContent: "space-between", marginBottom: 12 })}>
               <span style={{ fontSize: 22 }}>{a.icon}</span>
               <div style={{ width: 8, height: 8, borderRadius: "50%", background: a.color, boxShadow: `0 0 8px ${a.color}80` }} />
             </div>
             <div style={{ fontSize: 13, color: T.muted, fontWeight: 600, marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>{showBal ? money(a.bal, cfg) : "•••"}</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>{showBal ? money(a.balance, cfg) : "•••"}</div>
           </div>
         ))}
       </div>
     </div>
   );
 }
-
 // ─── STATS ────────────────────────────────────────────────────────────────────
 function StatsTab({ txns, cfg, cCats, T, accs, tr, goToTxns }) {
   const now = new Date();
@@ -1085,34 +1128,43 @@ function StatsTab({ txns, cfg, cCats, T, accs, tr, goToTxns }) {
 function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr, txFilter, setTxFilter }) {
   const [limit, setLimit] = useState(50);
   const [p, setP] = useState("all");
-  const [query, setQuery] = useState("");
+  
+  // FIX: Separate committed tags from the active typing draft
+  const [query, setQuery] = useState(""); // Committed tags: "bills, food"
+  const [draft, setDraft] = useState(""); // Currently typing: "internet"
+  
   const [showS, setShowS] = useState(false);
   const [showDR, setShowDR] = useState(false);
   const [fromD, setFromD] = useState("");
   const [toD, setToD] = useState("");
   const srRef = useRef(null);
 
-  // Read current Account filter from the global state, default to "all"
   const accF = txFilter.aid || "all";
 
   useEffect(() => { if (showS && srRef.current) srRef.current.focus(); }, [showS]);
+
+  // Combine committed tags with whatever is currently being typed for live filtering
+  const effectiveQuery = [query, draft].map(s => s.trim()).filter(Boolean).join(", ");
 
   const periodList = useMemo(() => {
     let r = byPeriod(txns, p);
     if (accF !== "all") r = r.filter(t => t.aid === accF || t.toAid === accF);
     if (fromD) r = r.filter(t => t.date >= fromD);
     if (toD) r = r.filter(t => t.date <= toD);
-    if (query.trim()) {
-      // SMART SEARCH: Splits ONLY by commas. 
-      // "Bills, Petrol Food" => Searches for "bills" OR "petrol food"
-      const keywords = query.toLowerCase().split(',').map(k => k.trim()).filter(k => k);
+    
+    if (effectiveQuery) {
+      // SMART SEARCH: Commas = OR, Spaces = AND
+      const groups = effectiveQuery.toLowerCase().split(',').map(g => g.trim()).filter(g => g);
       r = r.filter(t => {
         const searchStr = `${t.note} ${getCat(t.cat, cCats).l} ${t.date} ${t.amt}`.toLowerCase();
-        return keywords.some(k => searchStr.includes(k));
+        return groups.some(group => {
+           const words = group.split(/\s+/);
+           return words.every(w => searchStr.includes(w));
+        });
       });
     }
     return [...r].sort((a, b) => b.date.localeCompare(a.date));
-  }, [txns, p, query, accF, fromD, toD, cCats]);
+  }, [txns, p, query, draft, accF, fromD, toD, cCats]);
 
   const sIn = periodList.filter(t => t.type === "income").reduce((s, t) => s + t.amt, 0);
   const sOut = periodList.filter(t => t.type === "expense").reduce((s, t) => s + t.amt, 0);
@@ -1128,7 +1180,8 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr, txFi
       <div style={s.row({ justifyContent: "space-between", padding: "20px 2px 16px", gap: 12, overflow: "visible", position: "relative", zIndex: 10 })}>
         <AccDrop accs={accs} selId={accF} onChange={(val) => setTxFilter(prev => ({...prev, aid: val}))} T={T} tr={tr} />
         <div style={s.row({ gap: 8, flexShrink: 0 })}>
-          <IBtn onClick={() => setShowS(v => !v)} active={showS} T={T}>{SearchIco(showS ? T.accent : T.sub)}</IBtn>
+          {/* FIX: Clear the draft when opening the search bar so it's fresh */}
+          <IBtn onClick={() => { setShowS(v => !v); setDraft(""); }} active={showS} T={T}>{SearchIco(showS ? T.accent : T.sub)}</IBtn>
           <IBtn onClick={() => openModal("report")} T={T}>{PdfIco(T.sub)}</IBtn>
           <IBtn onClick={() => setShowDR(v => !v)} active={showDR} T={T}>{CalIco(showDR ? T.accent : T.sub)}</IBtn>
         </div>
@@ -1137,11 +1190,20 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr, txFi
       {showS && (
         <div style={{ position: "relative", marginBottom: 16 }}>
           <div style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>{SearchIco(T.muted)}</div>
-          <input ref={srRef} value={query} onChange={e => setQuery(e.target.value)} 
-            onKeyDown={e => { if (e.key === 'Enter') { e.target.blur(); setShowS(false); } }}
-            placeholder="Search tags (comma separated)..."
+          
+          {/* FIX: Bind to draft, append to query on Enter */}
+          <input ref={srRef} value={draft} onChange={e => setDraft(e.target.value)} 
+            onKeyDown={e => { 
+              if (e.key === 'Enter') { 
+                if (draft.trim()) setQuery(effectiveQuery);
+                setDraft("");
+                e.target.blur(); 
+                setShowS(false); 
+              } 
+            }}
+            placeholder="Type and press enter (e.g. 'bills internet')..."
             style={{ background: T.bg2, borderRadius: 14, color: T.text, fontSize: 14, padding: "12px 36px 12px 40px", width: "100%", boxSizing: "border-box" }} />
-          {query && <button onClick={() => setQuery("")} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", color: T.muted, fontSize: 18 }}>✕</button>}
+          {draft && <button onClick={() => setDraft("")} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", color: T.muted, fontSize: 18 }}>✕</button>}
         </div>
       )}
 
@@ -1160,7 +1222,8 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr, txFi
 
       <PBar p={p} set={setP} T={T} tr={tr} />
 
-      {query.trim() !== "" && !showS && (
+      {/* FIX: Show committed tags even when the search bar is open */}
+      {query.trim() !== "" && (
         <div style={s.row({ gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" })}>
           <span style={{ fontSize: 13, color: T.muted }}>Tags:</span>
           {query.split(',').map(k => k.trim()).filter(k => k).map((k, i) => (
@@ -1186,7 +1249,6 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr, txFi
         </div>
       )}
 
-      {/* GRAPHICALLY UPGRADED SUMMARY FILTER BOXES */}
       {periodList.length > 0 && (
         <div style={s.row({ gap: 10, marginBottom: 16 })}>
           {[["INCOME", sIn, T.green, "income"], ["EXPENSE", sOut, T.red, "expense"], ["TRANSFER", sTr, T.accent, "transfer"]].map(([l, v, c, typ]) => {
@@ -1213,7 +1275,6 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr, txFi
 
       {list.length === 0 && <div style={{ textAlign: "center", color: T.muted, padding: "40px 0", fontSize: 14, fontWeight: 600 }}>{tr("noTxns")}</div>}
 
-      {/* PASSING ONEDIT SO IT OPENS THE VIEW MODAL FIRST */}
       {list.slice(0, limit).map(t => (
         <TxCard key={t.id} t={t} cfg={cfg} cCats={cCats} T={T} onEdit={() => onEdit(t)} onDel={() => onDel(t.id)} accs={accs} showAcc />
       ))}
