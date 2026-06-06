@@ -224,7 +224,7 @@ function PBar({ p, set, T, tr }) {
   );
 }
 
-function TxCard({ t, cfg, cCats, T, onEdit, onDel, accs, showAcc }) {
+function TxCard({ t, cfg, cCats, T, onClick, onEdit, onDel, accs, showAcc }) {
   const isTransfer = t.type === "transfer";
   const cat = isTransfer ? { i: "🔄", c: T.muted, l: "Transfer" } : getCat(t.cat, cCats);
 
@@ -236,7 +236,7 @@ function TxCard({ t, cfg, cCats, T, onEdit, onDel, accs, showAcc }) {
   const amtPrefix = isTransfer ? "" : (t.type === "income" ? "+" : "-");
 
   return (
-    <div className="tx-card" style={s.row({ background: T.bg2, borderRadius: 16, padding: "12px 16px", marginBottom: 10, gap: 12 })}>
+    <div className="tx-card" onClick={onClick} role="button" style={s.row({ background: T.bg2, borderRadius: 16, padding: "12px 16px", marginBottom: 10, gap: 12, cursor: onClick ? "pointer" : "default" })}>
       <div style={{ width: 44, height: 44, borderRadius: 14, background: isTransfer ? T.bg3 : cat.c + "20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
         {cat.i}
       </div>
@@ -250,10 +250,23 @@ function TxCard({ t, cfg, cCats, T, onEdit, onDel, accs, showAcc }) {
         <div style={{ fontSize: 15, fontWeight: 800, color: amtColor }}>
           {amtPrefix}{money(t.amt, cfg)}
         </div>
-        <div style={s.row({ gap: 6 })}>
-          <button onClick={onEdit} aria-label="Edit" style={{ padding: "6px 10px", borderRadius: 8, background: T.bg3, color: T.sub }}>{EditIco}</button>
-          <button onClick={onDel} aria-label="Delete" style={{ padding: "6px 10px", borderRadius: 8, background: T.bg3, color: T.red }}>{DelIco}</button>
-        </div>
+        
+        {/* QUICK ACTION ICONS RESTORED */}
+        {(onEdit || onDel) && (
+          <div style={s.row({ gap: 6 })}>
+            {onEdit && (
+              <button onClick={(e) => { e.stopPropagation(); onEdit(); }} aria-label="Edit" style={{ padding: "6px 10px", borderRadius: 8, background: T.bg3, color: T.sub }}>
+                {EditIco}
+              </button>
+            )}
+            {onDel && (
+              <button onClick={(e) => { e.stopPropagation(); onDel(); }} aria-label="Delete" style={{ padding: "6px 10px", borderRadius: 8, background: T.bg3, color: T.red }}>
+                {DelIco}
+              </button>
+            )}
+          </div>
+        )}
+        
       </div>
     </div>
   );
@@ -863,9 +876,9 @@ export default function App() {
 
       <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "0 16px", paddingBottom: 110 }}>
         {/* 2. Pass safe variables to all tabs */}
-        {tab === "home" && <HomeTab txns={safeTxns} accs={accsB} T={T} cfg={safeCfg} tr={tr} goToTxns={goToTxns} openModal={openModal} />}
+        {tab === "home" && <HomeTab txns={safeTxns} accs={accsB} cCats={safeCCats} T={T} cfg={safeCfg} tr={tr} goToTxns={goToTxns} openModal={openModal} setViewTx={setViewTx} />}
         {tab === "stats" && <StatsTab txns={safeTxns} cfg={safeCfg} cCats={safeCCats} T={T} accs={accsB} tr={tr} goToTxns={goToTxns} />}
-        {tab === "txns" && <TxnsTab txns={safeTxns} cfg={safeCfg} cCats={safeCCats} T={T} accs={safeAccs} onEdit={setViewTx} onDel={id => openModal("delTx", { id })} openModal={openModal} tr={tr} txFilter={txFilter} setTxFilter={setTxFilter} />}        
+        {tab === "txns" && <TxnsTab txns={safeTxns} cfg={safeCfg} cCats={safeCCats} T={T} accs={safeAccs} onView={setViewTx} onEdit={setEditTx} onDel={id => openModal("delTx", { id })} openModal={openModal} tr={tr} txFilter={txFilter} setTxFilter={setTxFilter} />}
         {tab === "accounts" && <AccountsTab accs={accsB} cfg={safeCfg} T={T} onAdd={() => openModal("addAcc")} onEdit={a => openModal("editAcc", { acc: a })} onDel={id => openModal("delAcc", { id })} tr={tr} />}
         {tab === "settings" && <SettingsTab cfg={safeCfg} setSetting={setSetting} T={T} localBackup={localBackup} driveBackup={driveBackup} driveRestore={driveRestore} openModal={openModal} gUser={gUser} gLogin={() => gLogin().then(t => t && showToast("✅ Signed in"))} gSignOut={gSignOut} cCats={safeCCats} onAddCat={() => openModal("addCat")} onDelCat={delCat} G_ID={G_ID} tr={tr} />}
       </div>
@@ -912,7 +925,7 @@ export default function App() {
 }
 
 // ─── HOME ─────────────────────────────────────────────────────────────────────
-function HomeTab({ txns, accs, T, cfg, tr, goToTxns, openModal }) {
+function HomeTab({ txns, accs, cCats, T, cfg, tr, goToTxns, openModal, setViewTx }) {
   const [showBal, setShowBal] = useState(true);
   const now = new Date();
   const m = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -923,6 +936,9 @@ function HomeTab({ txns, accs, T, cfg, tr, goToTxns, openModal }) {
   const tot = accs.reduce((s, a) => s + (a.balance || 0), 0); 
   const sy = getSym(cfg);
 
+  // Grab the 5 most recent transactions by date
+  const recentTxns = [...txns].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+
   return (
     <div className="tab-content" style={{ paddingBottom: 20 }}>
       
@@ -932,11 +948,10 @@ function HomeTab({ txns, accs, T, cfg, tr, goToTxns, openModal }) {
           <AppLogo size={44} />
           <div>
             <div style={{ fontSize: 13, color: T.muted, fontWeight: 600 }}>{tr("welcome")}</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>CashFlow</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>CashFlow Pro</div>
           </div>
         </div>
         <div style={s.row({ gap: 8 })}>
-          {/* FIX: Replaced emojis with your clean theme SVG functions */}
           <IBtn onClick={() => openModal("cash")} T={T}>{CalcIco(T.sub)}</IBtn>
           <IBtn onClick={() => openModal("report")} T={T}>{PdfIco(T.sub)}</IBtn>
           <IBtn onClick={() => setShowBal(!showBal)} T={T}>{showBal ? EyeIco(T.text) : EyeOffIco(T.muted)}</IBtn>
@@ -964,7 +979,7 @@ function HomeTab({ txns, accs, T, cfg, tr, goToTxns, openModal }) {
         </div>
       </div>
 
-      {/* ACCOUNTS: Restored 4-Tile Grid Layout */}
+      {/* ACCOUNTS: 4-Tile Grid Layout */}
       <div style={{ fontSize: 16, fontWeight: 800, color: T.text, marginBottom: 14 }}>{tr("accounts")}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, paddingBottom: 10 }}>
         {accs.map(a => (
@@ -1126,7 +1141,7 @@ function StatsTab({ txns, cfg, cCats, T, accs, tr, goToTxns }) {
 }
 
 // ─── TRANSACTIONS ─────────────────────────────────────────────────────────────
-function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr, txFilter, setTxFilter }) {
+function TxnsTab({ txns, cfg, cCats, T, accs, onView, onEdit, onDel, openModal, tr, txFilter, setTxFilter }) {
   const [limit, setLimit] = useState(50);
   const [p, setP] = useState("all");
   
@@ -1279,7 +1294,7 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr, txFi
       {list.length === 0 && <div style={{ textAlign: "center", color: T.muted, padding: "40px 0", fontSize: 14, fontWeight: 600 }}>{tr("noTxns")}</div>}
 
       {list.slice(0, limit).map(t => (
-        <TxCard key={t.id} t={t} cfg={cfg} cCats={cCats} T={T} onEdit={() => onEdit(t)} onDel={() => onDel(t.id)} accs={accs} showAcc />
+        <TxCard key={t.id} t={t} cfg={cfg} cCats={cCats} T={T} onClick={() => onView(t)} onEdit={() => onEdit(t)} onDel={() => onDel(t.id)} accs={accs} showAcc />
       ))}
 
       {list.length > limit && (
@@ -1292,47 +1307,80 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onEdit, onDel, openModal, tr, txFi
   );
 }
 
-// ─── ACCOUNTS ─────────────────────────────────────────────────────────────────
+// ─── ACCOUNTS TAB ────────────────────────────────────────────────────────────
 function AccountsTab({ accs, cfg, T, onAdd, onEdit, onDel, tr }) {
-  const total = accs.reduce((s, a) => s + a.balance, 0);
+  const sy = getSym(cfg);
+  
+  // Calculate Portfolio Health
+  const netWorth = accs.reduce((s, a) => s + (a.balance || 0), 0);
+  const assets = accs.reduce((s, a) => s + (a.balance > 0 ? a.balance : 0), 0);
+
+  // Sort positive accounts for the visual distribution bar
+  const distAccs = [...accs].filter(a => a.balance > 0).sort((a, b) => b.balance - a.balance);
+
   return (
-    <div className="tab-content" style={{ paddingBottom: 20 }}>
-      <div style={s.row({ justifyContent: "space-between", padding: "20px 2px 16px" })}>
-        <div style={{ fontSize: 22, fontWeight: 900, color: T.text }}>{tr("accounts")}</div>
-        <button onClick={onAdd} style={{ padding: "8px 16px", borderRadius: 12, background: T.bg3, color: T.sub, fontSize: 13, fontWeight: 700 }}>{tr("add")}</button>
+    <div className="tab-content" style={{ paddingBottom: 20, paddingTop: 16 }}>
+      
+      {/* 1. MOVED TO TOP: TITLE & ADD BUTTON */}
+      <div style={s.row({ justifyContent: "space-between", marginBottom: 20, alignItems: "center" })}>
+        <div style={{ fontSize: 24, fontWeight: 900, color: T.text }}>{tr("accounts")}</div>
+        <button onClick={onAdd} style={{ padding: "8px 16px", borderRadius: 12, background: T.accent + "20", color: T.accent, fontSize: 13, fontWeight: 800 }}>+ Add New</button>
       </div>
 
-      <div style={{ background: `linear-gradient(135deg,${T.accent}20,${T.bg2})`, borderRadius: 20, padding: "24px", marginBottom: 16, textAlign: "center" }}>
-        <div style={{ fontSize: 11, color: T.muted, fontWeight: 800, letterSpacing: 1.5, textTransform: "uppercase" }}>{tr("netWorth")}</div>
-        <div style={{ fontSize: 36, fontWeight: 900, color: T.text, marginTop: 8 }}>{money(total, cfg)}</div>
-      </div>
-
-      {accs.map(a => (
-        <div key={a.id} style={s.card(T, { marginBottom: 12 })}>
-          <div style={s.row({ gap: 14 })}>
-            <div style={{ width: 52, height: 52, borderRadius: 16, background: a.color + "20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, flexShrink: 0 }}>{a.icon}</div>
-            <div style={s.col({ flex: 1 })}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>{a.name}</div>
-              <div style={{ fontSize: 11, color: T.muted, marginTop: 4, fontWeight: 600 }}>{ATYPES[a.type] || a.type}</div>
-            </div>
-            <div style={s.col({ alignItems: "flex-end", gap: 8 })}>
-              <div style={{ fontSize: 18, fontWeight: 900, color: a.balance >= 0 ? T.text : T.red }}>{money(a.balance, cfg)}</div>
-              <div style={s.row({ gap: 6 })}>
-                <button onClick={() => onEdit(a)} aria-label="Edit" style={{ padding: "6px 10px", borderRadius: 8, background: T.bg3, color: T.sub }}>{EditIco}</button>
-                <button onClick={() => onDel(a.id)} aria-label="Delete" style={{ padding: "6px 10px", borderRadius: 8, background: T.bg3, color: T.red }}>{DelIco}</button>
-              </div>
-            </div>
-          </div>
-          <div style={s.row({ paddingTop: 14, marginTop: 14, borderTop: `1px solid ${T.sep}` })}>
-            {[["income", a.tIn || 0, T.green], ["expense", a.tEx || 0, T.red]].map(([l, v, c]) => (
-              <div key={l} style={s.col({ flex: 1, alignItems: "center" })}>
-                <div style={{ fontSize: 11, color: T.muted, fontWeight: 600 }}>{tr(l)}</div>
-                <div style={{ fontSize: 14, fontWeight: 800, color: c, marginTop: 2 }}>{money(v, cfg)}</div>
-              </div>
-            ))}
-          </div>
+      {/* 2. CLEAN PORTFOLIO HEALTH DASHBOARD */}
+      <div style={{ background: T.bg2, borderRadius: 24, padding: "24px 20px", marginBottom: 24, border: `1px solid ${T.sep}`, position: "relative", overflow: "hidden", boxShadow: `0 4px 20px ${T.sep}80` }}>
+        <div style={{ fontSize: 13, color: T.muted, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Portfolio Health</div>
+        <div style={{ fontSize: 36, fontWeight: 900, color: T.text, marginBottom: distAccs.length > 0 ? 24 : 0, display: "flex", alignItems: "baseline", gap: 4 }}>
+          <span style={{ fontSize: 20, color: T.muted }}>{sy}</span>
+          {money(netWorth, cfg).replace(sy, "")}
         </div>
-      ))}
+
+        {/* Visual Wealth Distribution Bar */}
+        {distAccs.length > 0 && (
+          <>
+            <div style={{ fontSize: 11, color: T.muted, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Asset Distribution</div>
+            <div style={{ height: 12, borderRadius: 6, display: "flex", overflow: "hidden", background: T.bg3, gap: 2 }}>
+              {distAccs.map(a => (
+                <div key={a.id} style={{ height: "100%", width: `${(a.balance / assets) * 100}%`, background: a.color, transition: "width 0.3s ease" }} title={`${a.name}: ${sy}${a.balance}`} />
+              ))}
+            </div>
+            {/* Legend */}
+            <div style={s.row({ gap: 12, marginTop: 10, overflowX: "auto", paddingBottom: 4 })}>
+               {distAccs.map(a => (
+                 <div key={a.id} style={s.row({ alignItems: "center", gap: 4, flexShrink: 0 })}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: a.color }} />
+                    <span style={{ fontSize: 11, color: T.muted, fontWeight: 600 }}>{a.name}</span>
+                 </div>
+               ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* 3. ACCOUNTS LIST */}
+      <div style={s.col({ gap: 12 })}>
+        {accs.map(a => (
+          <div key={a.id} style={{ background: T.bg2, borderRadius: 16, padding: "16px", border: `1px solid ${T.sep}` }}>
+            <div style={s.row({ justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 })}>
+              <div style={s.row({ gap: 12, alignItems: "center" })}>
+                <div style={{ width: 44, height: 44, borderRadius: 14, background: a.color + "20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{a.icon}</div>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>{a.name}</div>
+                  <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{a.type || "Account"}</div>
+                </div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: a.balance < 0 ? T.red : T.text }}>{money(a.balance, cfg)}</div>
+              </div>
+            </div>
+
+            <div style={s.row({ gap: 8, marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${T.sep}` })}>
+              <button onClick={() => onEdit(a)} style={{ flex: 1, padding: "8px", borderRadius: 10, background: T.bg3, color: T.text, fontSize: 13, fontWeight: 600 }}>Edit</button>
+              <button onClick={() => onDel(a.id)} style={{ flex: 1, padding: "8px", borderRadius: 10, background: T.red + "15", color: T.red, fontSize: 13, fontWeight: 600 }}>Delete</button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
