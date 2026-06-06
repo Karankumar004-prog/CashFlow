@@ -729,13 +729,13 @@ export default function App() {
     const data = JSON.stringify({ txns, accs, cCats, cfg, at: new Date().toISOString() }, null, 2);
     try {
       await Filesystem.writeFile({
-        path: `CashFlowPro/backup/cf-backup-${today()}.json`,
+        path: `CashFlow/backup/cf-backup-${today()}.json`,
         data: data,
         directory: Directory.Documents,
         encoding: Encoding.UTF8,
         recursive: true
       });
-      showToast("💾 Saved to Documents/CashFlowPro/backup");
+      showToast("💾 Saved to Documents/CashFlow/backup");
     } catch (e) {
       showToast("Can't Export: Permission not granted", T.red);
     }
@@ -786,8 +786,8 @@ export default function App() {
 
     try {
       const fileName = `CF-Report-${Date.now()}.csv`;
-      const fullPath = `CashFlowPro/Statements/${fileName}`;
-      try { await Filesystem.mkdir({ path: 'CashFlowPro/Statements', directory: Directory.Documents, recursive: true }); } catch (e) { }
+      const fullPath = `CashFlow/Statements/${fileName}`;
+      try { await Filesystem.mkdir({ path: 'CashFlow/Statements', directory: Directory.Documents, recursive: true }); } catch (e) { }
       await Filesystem.writeFile({ path: fullPath, data: csvContent, directory: Directory.Documents, encoding: Encoding.UTF8 });
       showToast(`✅ CSV Exported to Documents/${fullPath}`);
       closeModal();
@@ -932,12 +932,13 @@ function HomeTab({ txns, accs, T, cfg, tr, goToTxns, openModal }) {
           <AppLogo size={44} />
           <div>
             <div style={{ fontSize: 13, color: T.muted, fontWeight: 600 }}>{tr("welcome")}</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>CashFlow Pro</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>CashFlow</div>
           </div>
         </div>
         <div style={s.row({ gap: 8 })}>
-          <IBtn onClick={() => openModal("cash")} T={T}>💵</IBtn>
-          <IBtn onClick={() => openModal("report")} T={T}>🖨️</IBtn>
+          {/* FIX: Replaced emojis with your clean theme SVG functions */}
+          <IBtn onClick={() => openModal("cash")} T={T}>{CalcIco(T.sub)}</IBtn>
+          <IBtn onClick={() => openModal("report")} T={T}>{PdfIco(T.sub)}</IBtn>
           <IBtn onClick={() => setShowBal(!showBal)} T={T}>{showBal ? EyeIco(T.text) : EyeOffIco(T.muted)}</IBtn>
         </div>
       </div>
@@ -1480,7 +1481,7 @@ function SettingsTab({ cfg, setSetting, T, localBackup, driveBackup, driveRestor
       </div>
 
       <div style={{ textAlign: "center", marginTop: 30 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: T.text }}>CashFlow Pro v5.1</div>
+        <div style={{ fontSize: 13, fontWeight: 800, color: T.text }}>CashFlow v6.0</div>
         <div style={{ fontSize: 11, color: T.muted, marginTop: 4, fontWeight: 600 }}>No ads · Private · Secure</div>
 
         <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${T.sep}` }}>
