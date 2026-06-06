@@ -624,34 +624,39 @@ export default function App() {
   const [editTx, setEditTx] = useState(null);
   const [viewTx, setViewTx] = useState(null); // NEW: View Details State
 
-  // 1. Advanced Background Locking Engine (3-minute timer)
+  // 1. Advanced Background Locking & Privacy Engine
   useEffect(() => {
     let listenerHandle = null;
 
-    const handleState = async ({ isActive }) => {
-      // 🛡️ INSTANTLY trigger the privacy overlay
-      setIsBg(!isActive); 
+    // Trigger privacy screen instantly
+    const secureScreen = (isHidden) => setIsBg(isHidden);
 
-      if (!isActive) {
-        lockTimer.current = setTimeout(() => {
-          if (safeCfg.passwordEnabled) setUnlocked(false);
-        }, 180000);
-      } else {
-        if (lockTimer.current) {
-          clearTimeout(lockTimer.current);
-          lockTimer.current = null;
-        }
-      }
-    };
-
+    // 1A. Capacitor Native Listener
     const setupListener = async () => {
-      listenerHandle = await CapApp.addListener('appStateChange', handleState);
+      listenerHandle = await CapApp.addListener('appStateChange', ({ isActive }) => {
+        secureScreen(!isActive);
+        
+        if (!isActive) {
+          lockTimer.current = setTimeout(() => {
+            if (safeCfg.passwordEnabled) setUnlocked(false);
+          }, 180000);
+        } else {
+          if (lockTimer.current) {
+            clearTimeout(lockTimer.current);
+            lockTimer.current = null;
+          }
+        }
+      });
     };
-    
     setupListener();
+
+    // 1B. Web DOM Fallback (Faster for PWA/Browsers)
+    const handleVis = () => secureScreen(document.hidden);
+    document.addEventListener("visibilitychange", handleVis);
 
     return () => {
       if (listenerHandle) listenerHandle.remove();
+      document.removeEventListener("visibilitychange", handleVis);
     };
   }, [safeCfg.passwordEnabled]);
 
