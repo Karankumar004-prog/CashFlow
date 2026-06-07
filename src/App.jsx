@@ -603,7 +603,7 @@ function LockScreen({ T, cfg, onUnlock, tr }) {
 
       <div className={err ? "shake-error" : ""} style={s.row({ gap: 14, marginBottom: 48, height: 20 })}>
         {/* FIX: Ensure length defaults to at least 4 if state is corrupted, preventing visual bugs */}
-        {Array.from({ length: pwd.length || 4 }).map((_, i) => (
+        {Array.from({ length: pinLen }).map((_, i) => (
           <div key={i} style={{ width: 16, height: 16, borderRadius: "50%", background: err ? T.red : (i < pin.length ? T.accent : T.bg3), transition: "background .2s ease" }} />
         ))}
       </div>
