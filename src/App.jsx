@@ -86,6 +86,16 @@ const SEED_ACCS = [
 const DEF_CFG = { theme: "dark", currency: "INR", language: "English", numberFormat: "1,234.56", timeFormat: "12-hour", showTime: false, autoBackup: false, lastBackup: null, passwordEnabled: false, password: "" };
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
+// NEW: Cryptographically secure ID generation to prevent collisions
+const generateId = () => typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'id_' + Date.now() + Math.random().toString(36).substr(2, 9);
+
+// NEW: SHA-256 Hashing for secure PIN storage
+const hashPin = async (pin) => {
+  const msgBuffer = new TextEncoder().encode(pin);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
 const today = () => {
   const d = new Date();
   const offset = d.getTimezoneOffset() * 60000;
@@ -98,14 +108,22 @@ const fmtTime = (t, s) => {
   if (s?.timeFormat === "12-hour") { const [h, m] = t.split(":"); const H = +h; return `${H % 12 || 12}:${m} ${H >= 12 ? "PM" : "AM"}`; }
   return t;
 };
-const money = (n, s) => {
-  // FIX: Safeguard against undefined, null, or NaN to prevent fatal crashes
+
+const money = (n, cfg) => {
   const validNum = (n == null || isNaN(n)) ? 0 : Number(n);
-  
-  const sy = getSym(s), f = s?.numberFormat || "1,234.56";
-  if (f === "1.234,56") return sy + validNum.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  if (f === "1234.56") return sy + validNum.toFixed(2);
-  return sy + new Intl.NumberFormat("en-US", { minimumFractionDigits: 2 }).format(validNum);
+  const sy = getSym(cfg);
+  const format = cfg?.numberFormat || "1,234.56";
+
+  // FIX: Use native hardware formatting to handle negatives, millions, and edge cases safely
+  let locale = "en-US"; // Default: 1,234.56
+  if (format === "1.234,56") locale = "de-DE"; // European: 1.234,56
+  if (format === "1 234.56") locale = "en-ZA"; // Spaced: 1 234.56
+  if (format === "1234.56") return sy + validNum.toFixed(2); // Raw fallback
+
+  return sy + new Intl.NumberFormat(locale, { 
+    minimumFractionDigits: 2, 
+    maximumFractionDigits: 2 
+  }).format(validNum);
 };
 
 const getCat = (id, xc = []) => [...CATS.income, ...CATS.expense, ...xc].find(c => c.id === id) || { l: id, i: "•", c: "#888" };
@@ -526,9 +544,17 @@ function LockScreen({ T, cfg, onUnlock, tr }) {
     }
   };
 
+  // FIX: Prevent random biometric trigger loops on config state changes
+  const bioPrompted = useRef(false);
+
   useEffect(() => {
-    if (cfg.useBiometrics) handleBio();
-  }, [cfg.useBiometrics]);
+    if (cfg?.useBiometrics && !bioPrompted.current) {
+      bioPrompted.current = true;
+      handleBio();
+    }
+  }, [cfg?.useBiometrics]);
+
+  const pinLen = cfg?.pinLength || 4; // Read length dynamically
 
   const handlePress = async (n) => {
     if (err) return;
@@ -538,10 +564,13 @@ function LockScreen({ T, cfg, onUnlock, tr }) {
     const next = pin + n;
     setPin(next);
     
-    // FIX: Compare against our safe 'pwd' variable
-    if (next.length === pwd.length) {
-      if (next === pwd) setTimeout(onUnlock, 150);
-      else {
+    if (next.length === pinLen || (!cfg?.pinLength && next.length === pwd.length)) {
+      const hashedNext = await hashPin(next);
+      
+      // Fallback allows legacy plaintext passwords to work until the user resets them
+      if (hashedNext === pwd || next === pwd) {
+        setTimeout(onUnlock, 150);
+      } else {
         setErr(true);
         try { await Haptics.vibrate(); } catch (e) { } 
         setTimeout(() => { setPin(""); setErr(false); }, 500);
@@ -661,6 +690,7 @@ export default function App() {
   }, [safeCfg.passwordEnabled]);
 
   // 2. Lock Zooming on mobile via viewport tag injection
+  // FIX: Restored accessibility zoom by removing 'maximum-scale' and 'user-scalable=no'
   useEffect(() => {
     let meta = document.querySelector('meta[name="viewport"]');
     if (!meta) {
@@ -668,7 +698,7 @@ export default function App() {
       meta.name = "viewport";
       document.head.appendChild(meta);
     }
-    meta.content = "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover";
+    meta.content = "width=device-width, initial-scale=1.0, viewport-fit=cover";
   }, []);
 
   // 3. Request permissions on first boot for new installs
@@ -716,19 +746,26 @@ export default function App() {
   // Translation Engine
   const tr = (key) => DICT[safeCfg.language]?.[key] || DICT["English"][key] || key;
 
-  const showToast = (msg, color) => { setToast({ msg, color: color || T.accent }); setTimeout(() => setToast(null), 2500); };
+  // FIX: Prevent Toast Race Conditions with a dedicated ref
+  const toastTimer = useRef(null);
+  const showToast = (msg, color) => { 
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ msg, color: color || T.accent }); 
+    toastTimer.current = setTimeout(() => setToast(null), 2500); 
+  };
+  
   const openModal = (type, data = {}) => setModal({ type, data });
   const closeModal = () => setModal(null);
   const setSetting = (k, v) => setCfg(c => ({ ...c, [k]: v }));
 
-  // CRUD
-  const addTxn = t => { setTxns(p => [{ ...t, id: Date.now() }, ...p]); showToast(t.type === "income" ? "💚 " + tr("income") : "💸 " + tr("expense")); closeModal(); };
+  // FIX: Swap Date.now() for generateId()
+  const addTxn = t => { setTxns(p => [{ ...t, id: generateId() }, ...p]); showToast(t.type === "income" ? "💚 " + tr("income") : "💸 " + tr("expense")); closeModal(); };
   const editTxn = t => { setTxns(p => p.map(x => x.id === t.id ? t : x)); showToast(tr("saveChanges").split(" ")[1]); closeModal(); };
   const delTxn = id => { setTxns(p => p.filter(t => t.id !== id)); showToast(tr("remove"), T.muted); closeModal(); };
-  const addAcc = a => { setAccs(p => [...p, { ...a, id: "a" + Date.now() }]); showToast("Account added"); closeModal(); };
+  const addAcc = a => { setAccs(p => [...p, { ...a, id: generateId() }]); showToast("Account added"); closeModal(); };
   const editAcc = a => { setAccs(p => p.map(x => x.id === a.id ? a : x)); showToast(tr("saveChanges").split(" ")[1]); closeModal(); };
   const delAcc = id => { if (accs.length <= 1) { showToast("Need at least one account", T.red); return; } setAccs(p => p.filter(a => a.id !== id)); setTxns(p => p.filter(t => t.aid !== id)); showToast(tr("remove"), T.muted); closeModal(); };
-  const addCat = c => { setCCats(p => [...p, { ...c, id: "c" + Date.now() }]); showToast("Category added"); closeModal(); };
+  const addCat = c => { setCCats(p => [...p, { ...c, id: generateId() }]); showToast("Category added"); closeModal(); };
 
   const delCat = id => {
     const isUsed = txns.some(t => t.cat === id);
@@ -763,11 +800,19 @@ export default function App() {
     }
   };
 
+  // Reusable strict schema validation
+  const validateAndSet = (d) => {
+    if (d.txns && Array.isArray(d.txns)) setTxns(d.txns); 
+    if (d.accs && Array.isArray(d.accs)) setAccs(d.accs); 
+    if (d.cCats && Array.isArray(d.cCats)) setCCats(d.cCats); 
+    if (d.cfg && typeof d.cfg === 'object') setCfg(d.cfg);
+  };
+
   const localRestore = async (f) => {
     try {
-      const text = await f.text(); // Modern Web API, bypasses FileReader limits on Android
+      const text = await f.text(); 
       const d = JSON.parse(text);
-      if (d.txns) setTxns(d.txns); if (d.accs) setAccs(d.accs); if (d.cCats) setCCats(d.cCats); if (d.cfg) setCfg(d.cfg);
+      validateAndSet(d);
       showToast("✅ Restored");
       closeModal();
     } catch (err) {
@@ -780,12 +825,21 @@ export default function App() {
     const hasPerm = await ensureStoragePermission();
     if (!hasPerm) { showToast("Permission not granted", T.red); return; }
 
-    const rows = txns.filter(t => t.date >= from && t.date <= to && (aF === "all" || t.aid === aF || t.toAid === aF)).sort((a, b) => a.date.localeCompare(b.date));
+    // FIX: Ensure reports only pull toAid for valid transfers
+  const rows = txns.filter(t => t.date >= from && t.date <= to && (aF === "all" || t.aid === aF || (t.type === "transfer" && t.toAid === aF))).sort((a, b) => a.date.localeCompare(b.date));
 
     // ADDED ACCOUNT COLUMN
     let csvContent = "Date,Note,Category,Type,Account,In,Out,Balance\n";
     let run = 0;
     
+    // FIX: Neutralize CSV Injection
+    const escapeCSV = (str) => {
+      if (!str) return '""';
+      let escaped = String(str).replace(/"/g, '""');
+      if (/^[=+\-@]/.test(escaped)) escaped = "'" + escaped; // Add prefix to disable execution
+      return `"${escaped}"`;
+    };
+
     rows.forEach(t => {
       let isIn = 0, isOut = 0;
       const cat = t.type === "transfer" ? "Transfer" : getCat(t.cat, cCats).l;
@@ -803,7 +857,7 @@ export default function App() {
          else if (t.toAid === aF) { isIn = t.amt; run += t.amt; }
       }
       
-      csvContent += `"${t.date}","${(t.note || '').replace(/"/g, '""')}","${cat}","${t.type}","${accStr}",${isIn || 0},${isOut || 0},${run}\n`;
+      csvContent += `${escapeCSV(t.date)},${escapeCSV(t.note)},${escapeCSV(cat)},${escapeCSV(t.type)},${escapeCSV(accStr)},${isIn || 0},${isOut || 0},${run}\n`;
     });
 
     try {
@@ -1014,6 +1068,7 @@ function HomeTab({ txns, accs, cCats, T, cfg, tr, goToTxns, openModal, setViewTx
     </div>
   );
 }
+
 // ─── STATS ────────────────────────────────────────────────────────────────────
 function StatsTab({ txns, cfg, cCats, T, accs, tr, goToTxns }) {
   const now = new Date();
@@ -1031,10 +1086,12 @@ function StatsTab({ txns, cfg, cCats, T, accs, tr, goToTxns }) {
 
   const key = `${sY}-${String(sM + 1).padStart(2, "0")}`;
   const mt = txns.filter(t => t.date.startsWith(key));
+  
+  // FIX: Strictly isolate expenses to prevent transfers from breaking pie charts
   const mInc = mt.filter(t => t.type === "income").reduce((s, t) => s + t.amt, 0);
   const mExp = mt.filter(t => t.type === "expense").reduce((s, t) => s + t.amt, 0);
-
   const mTr = mt.filter(t => t.type === "transfer").reduce((s, t) => s + t.amt, 0);
+
   const flow = {};
   mt.filter(t => t.type === "transfer").forEach(t => {
     flow[t.aid] = (flow[t.aid] || 0) - t.amt;
@@ -1043,6 +1100,7 @@ function StatsTab({ txns, cfg, cCats, T, accs, tr, goToTxns }) {
   const flowArr = Object.entries(flow).filter(([_, v]) => v !== 0).sort((a, b) => b[1] - a[1]);
 
   const cm = {};
+  // FIX: Strictly isolate expenses to prevent transfers from showing up in Top Spending
   mt.filter(t => t.type === "expense").forEach(t => { cm[t.cat] = (cm[t.cat] || 0) + t.amt; });
   const top = Object.entries(cm).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
@@ -2049,19 +2107,22 @@ function PinModal({ T, cfg, setCfg, onClose, showToast, tr }) {
   const [pin, setPin] = useState("");
   const [conf, setConf] = useState("");
 
-  const save = () => {
-    if (cfg.passwordEnabled && old !== cfg.password) { showToast("Current PIN is incorrect", T.red); return; }
+  const save = async () => {
+    const hashedOld = await hashPin(old);
+    if (cfg.passwordEnabled && old !== cfg.password && hashedOld !== cfg.password) { showToast("Current PIN is incorrect", T.red); return; }
     if (pin.length < 4) { showToast("4+ digits required", T.red); return; }
     if (pin !== conf) { showToast("New PINs don't match", T.red); return; }
 
-    setCfg(c => ({ ...c, passwordEnabled: true, password: pin }));
+    const hashedNew = await hashPin(pin);
+    setCfg(c => ({ ...c, passwordEnabled: true, password: hashedNew, pinLength: pin.length }));
     showToast("🔒 Password saved");
     onClose();
   };
 
-  const remove = () => {
-    if (cfg.passwordEnabled && old !== cfg.password) { showToast("Current PIN is incorrect", T.red); return; }
-    setCfg(c => ({ ...c, passwordEnabled: false, password: "" }));
+  const remove = async () => {
+    const hashedOld = await hashPin(old);
+    if (cfg.passwordEnabled && old !== cfg.password && hashedOld !== cfg.password) { showToast("Current PIN is incorrect", T.red); return; }
+    setCfg(c => ({ ...c, passwordEnabled: false, password: "", pinLength: 4 }));
     showToast("🔓 Password removed");
     onClose();
   };
