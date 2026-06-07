@@ -1182,7 +1182,8 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onView, onEdit, onDel, openModal, 
 
   const periodList = useMemo(() => {
     let r = byPeriod(txns, p);
-    if (accF !== "all") r = r.filter(t => t.aid === accF || t.toAid === accF);
+    // FIX: Only check toAid if the transaction is actually a transfer
+    if (accF !== "all") r = r.filter(t => t.aid === accF || (t.type === "transfer" && t.toAid === accF));
     if (fromD) r = r.filter(t => t.date >= fromD);
     if (toD) r = r.filter(t => t.date <= toD);
     
@@ -1606,7 +1607,12 @@ function TxModal({ T, accs, allCats, cfg, onSubmit, onClose, editTx, tr }) {
       if (form.aid === form.toAid) { setErr("Source and destination must be different"); return; }
     }
     localStorage.removeItem("cf_draft");
-    onSubmit({ ...(editTx || {}), ...form, amt: parseFloat(finalAmt), type });
+    
+    // FIX: Clean the payload so 'toAid' doesn't secretly attach to Income/Expense
+    const cleanForm = { ...form };
+    if (type !== "transfer") delete cleanForm.toAid;
+
+    onSubmit({ ...(editTx || {}), ...cleanForm, amt: parseFloat(finalAmt), type });
   };
 
   return (
@@ -1927,7 +1933,8 @@ function ReportModal({ T, txns, accs, cCats, cfg, onClose, onExport, tr }) {
     { l: "All Time", f: "2000-01-01", t: td },
   ];
   
-  const rows = txns.filter(t => t.date >= from && t.date <= to && (aF === "all" || t.aid === aF || t.toAid === aF)).sort((a, b) => a.date.localeCompare(b.date));
+  // FIX: Ensure reports only pull toAid for valid transfers
+  const rows = txns.filter(t => t.date >= from && t.date <= to && (aF === "all" || t.aid === aF || (t.type === "transfer" && t.toAid === aF))).sort((a, b) => a.date.localeCompare(b.date));
   
   // Math adjusted for Double-Entry
   const inc = rows.filter(t => t.type === "income" || (t.type === "transfer" && aF !== "all" && t.toAid === aF)).reduce((s, t) => s + t.amt, 0);
