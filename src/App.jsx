@@ -1294,7 +1294,7 @@ function TxnsTab({ txns, cfg, cCats, T, accs, onView, onEdit, onDel, openModal, 
                 setShowS(false); 
               } 
             }}
-            placeholder="Type and press enter (e.g. 'bills internet')..."
+            placeholder="Type and Search tags, notes, categories..."
             style={{ background: T.bg2, borderRadius: 14, color: T.text, fontSize: 14, padding: "12px 36px 12px 40px", width: "100%", boxSizing: "border-box" }} />
           {draft && <button onClick={() => setDraft("")} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", color: T.muted, fontSize: 18 }}>✕</button>}
         </div>
